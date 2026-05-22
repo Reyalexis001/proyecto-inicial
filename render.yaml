@@ -1,0 +1,32 @@
+# render.yaml — Configuración de despliegue en Render
+# Este archivo le dice a Render cómo construir y correr la app.
+
+services:
+  - type: web
+    name: sistema-actas-mexicanas
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        value: https://dzhwhcefqqmwowluztq.supabase.co
+      - key: SUPABASE_SERVICE_ROLE
+        sync: false   # Lo pones manualmente en el dashboard de Render
+      - key: MP_ACCESS_TOKEN
+        sync: false
+      - key: MP_SANDBOX
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true   # Render genera uno automáticamente
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: BACKEND_URL
+        sync: false   # Lo llenas después de conocer la URL de Render
+      - key: FRONTEND_URL
+        sync: false
