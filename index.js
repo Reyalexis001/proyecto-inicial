@@ -393,7 +393,13 @@ app.post('/api/admin/tramites/:id/upload', verifyAdmin, upload.single('pdf'), as
 
 // ─── Fallback SPA: cualquier otra ruta sirve index.html ──────────────────
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  const fs = require('fs');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).json({ status: 'ok', message: 'API corriendo. Frontend pendiente.' });
+  }
 });
 
 // ── Arrancar servidor ─────────────────────────────────────────────────────
