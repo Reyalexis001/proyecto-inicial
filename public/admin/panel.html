@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Administrativo — Sistema de Actas Mexicanas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#0d631b',
+            'primary-dark': '#084f14',
+            'primary-50': '#e8f5e9',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-family: 'Material Symbols Outlined'; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up { animation: fadeUp 0.4s ease forwards; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation: spin 0.7s linear infinite; display:inline-block; vertical-align:middle; }
+    .card-enter { animation: fadeUp 0.3s ease forwards; }
+
+    /* File drop zone */
+    .drop-zone { transition: all 0.2s ease; }
+    .drop-zone.dragover { border-color: #0d631b; background: #e8f5e9; }
+
+    /* Toast */
+    #toast { transition: all 0.3s ease; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
+          <span class="material-symbols-outlined text-white text-[20px]" style="font-variation-settings:'FILL' 1;">account_balance</span>
+        </div>
+        <div>
+          <div class="font-bold text-primary text-sm leading-tight">Sistema de Actas Mexicanas</div>
+          <div class="text-[11px] text-gray-400">Panel Administrativo</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button
+          onclick="loadTramites()"
+          class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors bg-gray-100 hover:bg-primary-50 px-3 py-2 rounded-lg"
+        >
+          <span class="material-symbols-outlined text-base">refresh</span>
+          Actualizar
+        </button>
+        <button
+          onclick="logout()"
+          class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+        >
+          <span class="material-symbols-outlined text-base">logout</span>
+          Salir
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toast notification -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden">
+    <div id="toast-inner" class="flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white">
+      <span id="toast-icon" class="material-symbols-outlined text-[18px]"></span>
+      <span id="toast-text"></span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <main class="flex-grow pt-24 pb-16 px-4 md:px-8 max-w-6xl mx-auto w-full">
+
+    <!-- Page header -->
+    <div class="mb-8">
+      <h1 class="text-2xl font-extrabold text-gray-900">Solicitudes Pendientes</h1>
+      <p class="text-sm text-gray-400 mt-1">Trámites que requieren que subas el PDF del acta.</p>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Pendientes</p>
+        <p id="stat-generando" class="text-3xl font-extrabold text-primary">—</p>
+        <p class="text-xs text-gray-400 mt-1">Requieren PDF</p>
+      </div>
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Procesando pago</p>
+        <p id="stat-procesando" class="text-3xl font-extrabold text-yellow-500">—</p>
+        <p class="text-xs text-gray-400 mt-1">Pago en revisión</p>
+      </div>
+      <div class="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Total</p>
+        <p id="stat-total" class="text-3xl font-extrabold text-gray-700">—</p>
+        <p class="text-xs text-gray-400 mt-1">Solicitudes activas</p>
+      </div>
+    </div>
+
+    <!-- Loading state -->
+    <div id="loading-state" class="text-center py-20">
+      <div class="w-10 h-10 border-4 border-gray-200 border-t-primary rounded-full mx-auto mb-4" style="animation: spin 1s linear infinite;"></div>
+      <p class="text-gray-400 text-sm">Cargando solicitudes...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div id="empty-state" class="hidden text-center py-20">
+      <div class="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
+        <span class="material-symbols-outlined text-primary text-4xl" style="font-variation-settings:'FILL' 1;">task_alt</span>
+      </div>
+      <p class="text-gray-700 font-bold text-lg">¡Todo al día!</p>
+      <p class="text-gray-400 text-sm mt-2">No hay solicitudes pendientes por atender.</p>
+    </div>
+
+    <!-- Cards grid -->
+    <div id="cards-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-gray-100 py-6 px-4 text-center">
+    <p class="text-xs text-gray-300">© 2024 Gobierno de México — Sistema de Actas Mexicanas · Admin</p>
+  </footer>
+
+  <script>
+    const token = localStorage.getItem('admin_token');
+    if (!token) window.location.href = '/admin/login.html';
+
+    function logout() {
+      localStorage.removeItem('admin_token');
+      window.location.href = '/admin/login.html';
+    }
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      const inner = document.getElementById('toast-inner');
+      const icon = document.getElementById('toast-icon');
+      const text = document.getElementById('toast-text');
+
+      icon.textContent = type === 'success' ? 'check_circle' : 'error';
+      icon.style.fontVariationSettings = "'FILL' 1";
+      text.textContent = msg;
+      inner.className = `flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white ${
+        type === 'success' ? 'bg-primary' : 'bg-red-500'
+      }`;
+
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3500);
+    }
+
+    function formatDate(dateStr) {
+      return new Date(dateStr).toLocaleString('es-MX', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function getBadge(estado) {
+      if (estado === 'generando_acta') {
+        return `<span class="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1">
+          <span class="w-1.5 h-1.5 bg-blue-500 rounded-full inline-block"></span>
+          Requiere PDF
+        </span>`;
+      }
+      return `<span class="bg-yellow-50 text-yellow-700 border border-yellow-200 px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1">
+        <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full inline-block"></span>
+        Procesando pago
+      </span>`;
+    }
+
+    function createCard(tramite) {
+      const canUpload = tramite.estado === 'generando_acta';
+      return `
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 card-enter flex flex-col gap-4" id="card-${tramite.id}">
+
+          <!-- Header -->
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1">CURP</p>
+              <p class="font-mono font-bold text-gray-800 text-sm tracking-widest">${tramite.curp}</p>
+            </div>
+            ${getBadge(tramite.estado)}
+          </div>
+
+          <!-- Info -->
+          <div class="border-t border-gray-50 pt-4 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-gray-400">Trámite</span>
+              <span class="text-xs font-semibold text-gray-700">Acta de Nacimiento</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-gray-400">Fecha</span>
+              <span class="text-xs font-medium text-gray-600">${formatDate(tramite.created_at)}</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-gray-400">ID</span>
+              <span class="text-[10px] font-mono text-gray-300">${tramite.id.split('-')[0]}...</span>
+            </div>
+          </div>
+
+          ${canUpload ? `
+          <!-- Upload zone -->
+          <div class="mt-1">
+            <div
+              id="dropzone-${tramite.id}"
+              class="drop-zone border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-primary hover:bg-primary-50 transition-all"
+              onclick="document.getElementById('file-${tramite.id}').click()"
+              ondragover="event.preventDefault(); this.classList.add('dragover')"
+              ondragleave="this.classList.remove('dragover')"
+              ondrop="handleDrop(event, '${tramite.id}')"
+            >
+              <span class="material-symbols-outlined text-gray-300 text-3xl mb-1 block" style="font-variation-settings:'FILL' 1;">upload_file</span>
+              <p class="text-xs text-gray-400 font-medium">Arrastra el PDF aquí o</p>
+              <p class="text-xs text-primary font-semibold mt-0.5">haz clic para seleccionar</p>
+            </div>
+            <p id="filename-${tramite.id}" class="text-xs text-gray-400 text-center mt-2 hidden"></p>
+            <input
+              type="file"
+              accept="application/pdf"
+              id="file-${tramite.id}"
+              class="hidden"
+              onchange="onFileSelected('${tramite.id}')"
+            />
+            <button
+              id="upload-btn-${tramite.id}"
+              onclick="uploadPDF('${tramite.id}')"
+              class="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2 mt-3 shadow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled
+            >
+              <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1;">cloud_upload</span>
+              Subir PDF del Acta
+            </button>
+          </div>
+          ` : `
+          <!-- Waiting for payment -->
+          <div class="bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-3 flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-yellow-500 text-base" style="font-variation-settings:'FILL' 1;">hourglass_top</span>
+            <p class="text-xs text-yellow-700">Esperando confirmación de pago para habilitar subida.</p>
+          </div>
+          `}
+        </div>
+      `;
+    }
+
+    function onFileSelected(id) {
+      const input = document.getElementById(`file-${id}`);
+      const btn = document.getElementById(`upload-btn-${id}`);
+      const nameEl = document.getElementById(`filename-${id}`);
+
+      if (input.files[0]) {
+        nameEl.textContent = `📄 ${input.files[0].name}`;
+        nameEl.classList.remove('hidden');
+        btn.disabled = false;
+      }
+    }
+
+    function handleDrop(event, id) {
+      event.preventDefault();
+      document.getElementById(`dropzone-${id}`).classList.remove('dragover');
+      const file = event.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') {
+        const input = document.getElementById(`file-${id}`);
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        onFileSelected(id);
+      }
+    }
+
+    async function uploadPDF(id) {
+      const input = document.getElementById(`file-${id}`);
+      const btn = document.getElementById(`upload-btn-${id}`);
+
+      if (!input.files[0]) return;
+
+      const originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>&nbsp; Subiendo...';
+
+      const formData = new FormData();
+      formData.append('pdf', input.files[0]);
+
+      try {
+        const res = await fetch(`/api/admin/tramites/${id}/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error);
+
+        showToast('✓ Acta subida correctamente. El usuario ya puede descargarla.');
+
+        // Remove card with fade out
+        const card = document.getElementById(`card-${id}`);
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        card.style.transition = 'all 0.3s ease';
+        setTimeout(() => {
+          card.remove();
+          checkEmptyState();
+        }, 300);
+
+      } catch (err) {
+        showToast(err.message || 'Error al subir el archivo.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      }
+    }
+
+    function checkEmptyState() {
+      const grid = document.getElementById('cards-grid');
+      if (!grid.children.length) {
+        grid.classList.add('hidden');
+        document.getElementById('empty-state').classList.remove('hidden');
+        document.getElementById('stat-generando').textContent = '0';
+        document.getElementById('stat-total').textContent = '0';
+      }
+    }
+
+    async function loadTramites() {
+      document.getElementById('loading-state').classList.remove('hidden');
+      document.getElementById('empty-state').classList.add('hidden');
+      document.getElementById('cards-grid').classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/admin/tramites', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.status === 401) {
+          logout();
+          return;
+        }
+
+        const tramites = await res.json();
+
+        document.getElementById('loading-state').classList.add('hidden');
+
+        // Stats
+        const generando = tramites.filter(t => t.estado === 'generando_acta').length;
+        const procesando = tramites.filter(t => t.estado === 'procesando_pago').length;
+        document.getElementById('stat-generando').textContent = generando;
+        document.getElementById('stat-procesando').textContent = procesando;
+        document.getElementById('stat-total').textContent = tramites.length;
+
+        if (!tramites.length) {
+          document.getElementById('empty-state').classList.remove('hidden');
+          return;
+        }
+
+        const grid = document.getElementById('cards-grid');
+        grid.innerHTML = tramites.map(createCard).join('');
+        grid.classList.remove('hidden');
+
+      } catch {
+        document.getElementById('loading-state').classList.add('hidden');
+        showToast('Error al cargar solicitudes. Recarga la página.', 'error');
+      }
+    }
+
+    // Load on mount
+    loadTramites();
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadTramites, 30000);
+  </script>
+</body>
+</html>

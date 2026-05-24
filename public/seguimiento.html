@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estado de tu Trámite — Sistema de Actas Mexicanas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+    .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; line-height: 1; display: inline-block; }
+
+    /* Spinner animations */
+    @keyframes spin     { to { transform: rotate(360deg); } }
+    @keyframes spinSlow { to { transform: rotate(360deg); } }
+    @keyframes pulse    { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.5; transform:scale(.85); } }
+    @keyframes pulseRing { 0% { box-shadow:0 0 0 0 rgba(13,99,27,.4); } 70% { box-shadow:0 0 0 10px rgba(13,99,27,0); } 100% { box-shadow:0 0 0 0 rgba(13,99,27,0); } }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+    .spin      { animation: spin     1s   linear   infinite; }
+    .spin-slow { animation: spinSlow 3s   linear   infinite; }
+    .pulse-dot { animation: pulse    1.4s ease-in-out infinite; }
+    .pulse-ring{ animation: pulseRing 2s  ease-out  infinite; }
+    .fade-up   { animation: fadeUp   .4s  ease      forwards; }
+
+    /* Download button */
+    .btn-dl {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 16px 20px; border-radius: 14px; border: none;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      transition: background .2s, transform .1s;
+    }
+    .btn-dl.ready { background:#0d631b; color:#fff; }
+    .btn-dl.ready:hover { background:#084f14; }
+    .btn-dl.ready:active { transform:scale(.98); }
+    .btn-dl.disabled { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
+  </style>
+</head>
+<body>
+
+  <!-- Loading skeleton -->
+  <div id="loading" style="text-align:center;">
+    <div style="width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#0d631b;border-radius:50%;margin:0 auto 16px;" class="spin"></div>
+    <p style="color:#9ca3af;font-size:14px;">Cargando estado de tu trámite...</p>
+  </div>
+
+  <!-- Error state -->
+  <div id="error-state" style="display:none;text-align:center;max-width:360px;">
+    <div style="width:64px;height:64px;background:#fee2e2;border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <span class="material-symbols-outlined" style="color:#ef4444;font-size:32px;font-variation-settings:'FILL' 1;">error</span>
+    </div>
+    <p style="font-size:16px;font-weight:700;color:#111827;margin-bottom:8px;">Trámite no encontrado</p>
+    <p style="font-size:13px;color:#6b7280;margin-bottom:24px;">No pudimos encontrar el trámite solicitado.</p>
+    <a href="/" style="font-size:14px;font-weight:700;color:#0d631b;text-decoration:none;">← Volver al inicio</a>
+  </div>
+
+  <!-- Main card -->
+  <div id="card" style="display:none;width:100%;max-width:440px;" class="fade-up">
+    <div style="background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,0.08);border:1px solid #e5e7eb;padding:36px;display:flex;flex-direction:column;align-items:center;">
+
+      <!-- Header -->
+      <div style="width:100%;display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">CURP</div>
+          <div id="curp-disp" style="font-family:monospace;font-size:13px;font-weight:700;color:#111827;letter-spacing:.1em;"></div>
+        </div>
+        <div id="badge" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;"></div>
+      </div>
+
+      <!-- Animated loader (visible while processing) -->
+      <div id="loader-area" style="display:none;position:relative;width:120px;height:120px;margin-bottom:28px;align-items:center;justify-content:center;">
+        <svg class="spin-slow" style="position:absolute;width:100%;height:100%;color:#0d631b;opacity:.15;" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="8" stroke-dasharray="70 210" stroke-linecap="round"/>
+        </svg>
+        <svg class="spin" style="position:absolute;width:80%;height:80%;color:#0d631b;" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="35" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="160 60" stroke-linecap="round"/>
+        </svg>
+        <span class="material-symbols-outlined" style="color:#0d631b;font-size:32px;font-variation-settings:'FILL' 1;position:relative;z-index:1;">description</span>
+      </div>
+
+      <!-- Timeline -->
+      <div style="width:100%;position:relative;margin-bottom:28px;">
+
+        <!-- Vertical line -->
+        <div style="position:absolute;left:23px;top:44px;width:2px;height:calc(100% - 60px);background:#e5e7eb;z-index:0;"></div>
+
+        <!-- Step 1 -->
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;position:relative;z-index:1;">
+          <div id="icon-1" style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#e5e7eb;">
+            <span class="material-symbols-outlined" style="color:#9ca3af;font-size:22px;">credit_card</span>
+          </div>
+          <div style="padding-top:10px;">
+            <div id="title-1" style="font-size:13px;font-weight:700;color:#9ca3af;">Procesando pago</div>
+            <div id="sub-1"   style="font-size:12px;color:#9ca3af;margin-top:3px;">Esperando confirmación</div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;position:relative;z-index:1;">
+          <div id="icon-2" style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#e5e7eb;">
+            <span class="material-symbols-outlined" style="color:#9ca3af;font-size:22px;">description</span>
+          </div>
+          <div style="padding-top:10px;">
+            <div id="title-2" style="font-size:13px;font-weight:700;color:#9ca3af;">Generando acta</div>
+            <div id="sub-2"   style="font-size:12px;color:#9ca3af;margin-top:3px;">En proceso</div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div style="display:flex;align-items:flex-start;gap:16px;position:relative;z-index:1;">
+          <div id="icon-3" style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#e5e7eb;">
+            <span class="material-symbols-outlined" style="color:#9ca3af;font-size:22px;">download</span>
+          </div>
+          <div style="padding-top:10px;">
+            <div id="title-3" style="font-size:13px;font-weight:700;color:#9ca3af;">Acta lista</div>
+            <div id="sub-3"   style="font-size:12px;color:#9ca3af;margin-top:3px;">Disponible para descarga</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Info message -->
+      <div id="info-box" style="width:100%;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px 16px;display:flex;align-items:flex-start;gap:10px;margin-bottom:24px;">
+        <span class="material-symbols-outlined" style="color:#3b82f6;font-size:18px;margin-top:1px;font-variation-settings:'FILL' 1;flex-shrink:0;">info</span>
+        <p id="info-text" style="font-size:12px;color:#1e40af;line-height:1.6;"></p>
+      </div>
+
+      <!-- Download button -->
+      <button id="btn-dl" class="btn-dl disabled" disabled>
+        <span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'FILL' 1;">picture_as_pdf</span>
+        Descargar PDF del Acta
+      </button>
+
+      <!-- Footer -->
+      <div style="width:100%;margin-top:20px;display:flex;justify-content:space-between;align-items:center;">
+        <p id="fecha" style="font-size:11px;color:#d1d5db;"></p>
+        <a href="/" style="font-size:12px;color:#9ca3af;text-decoration:none;font-weight:600;" onmouseover="this.style.color='#0d631b'" onmouseout="this.style.color='#9ca3af'">← Inicio</a>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const params    = new URLSearchParams(window.location.search);
+    const tramiteId = params.get('id');
+    let   timer     = null;
+
+    if (!tramiteId) { window.location.href = '/'; }
+
+    // ── Render helpers ────────────────────────────────────────────────────
+    function setIconDone(n) {
+      const el = document.getElementById('icon-' + n);
+      el.style.background = '#0d631b';
+      el.innerHTML = '<span class="material-symbols-outlined" style="color:#fff;font-size:22px;font-variation-settings:\'FILL\' 1;">check_circle</span>';
+    }
+    function setIconActive(n) {
+      const el = document.getElementById('icon-' + n);
+      el.style.background = '#fff';
+      el.style.border = '2px solid #0d631b';
+      el.classList.add('pulse-ring');
+      el.innerHTML = '<span style="width:14px;height:14px;background:#0d631b;border-radius:50%;display:block;" class="pulse-dot"></span>';
+    }
+    function setIconPending(n, icon) {
+      const el = document.getElementById('icon-' + n);
+      el.style.background = '#f3f4f6';
+      el.style.border = 'none';
+      el.classList.remove('pulse-ring');
+      el.innerHTML = '<span class="material-symbols-outlined" style="color:#d1d5db;font-size:22px;">' + icon + '</span>';
+    }
+    function setTitle(n, text, color) {
+      document.getElementById('title-' + n).textContent = text;
+      document.getElementById('title-' + n).style.color  = color;
+    }
+    function setSub(n, text) {
+      document.getElementById('sub-' + n).textContent = text;
+    }
+
+    // ── State configs ─────────────────────────────────────────────────────
+    const STATES = {
+      pendiente_pago: {
+        badge:   { text:'Pendiente de pago', bg:'#fefce8', color:'#92400e', border:'#fde68a' },
+        loader:  false,
+        info:    'Tu trámite está registrado. Completa el pago para continuar.',
+        infoClr: { bg:'#fefce8', border:'#fde68a', icon:'#f59e0b', iconClr:'#92400e', text:'#92400e' },
+        s1: { done:false, active:false, title:'Procesando pago',  sub:'Esperando confirmación de pago' },
+        s2: { done:false, active:false, title:'Generando acta',   sub:'Pendiente de pago' },
+        s3: { done:false, active:false, title:'Acta lista',       sub:'Disponible para descarga' },
+      },
+      procesando_pago: {
+        badge:   { text:'Procesando pago', bg:'#fefce8', color:'#92400e', border:'#fde68a' },
+        loader:  true,
+        info:    'Tu pago está siendo verificado por MercadoPago. Puede tardar unos minutos.',
+        infoClr: { bg:'#fefce8', border:'#fde68a', icon:'#f59e0b', text:'#92400e' },
+        s1: { done:false, active:true,  title:'Procesando pago',  sub:'Verificando con MercadoPago...' },
+        s2: { done:false, active:false, title:'Generando acta',   sub:'Esperando confirmación de pago' },
+        s3: { done:false, active:false, title:'Acta lista',       sub:'Disponible para descarga' },
+      },
+      generando_acta: {
+        badge:   { text:'Generando acta', bg:'#eff6ff', color:'#1e40af', border:'#bfdbfe' },
+        loader:  true,
+        info:    'Pago confirmado ✓ Estamos preparando tu acta. Puede tomar entre 5 y 30 minutos.',
+        infoClr: { bg:'#eff6ff', border:'#bfdbfe', icon:'#3b82f6', text:'#1e40af' },
+        s1: { done:true,  active:false, title:'Pago confirmado',  sub:'Verificado con MercadoPago ✓' },
+        s2: { done:false, active:true,  title:'Generando acta',   sub:'Conectando con Registro Civil...' },
+        s3: { done:false, active:false, title:'Acta lista',       sub:'Disponible pronto' },
+      },
+      acta_lista: {
+        badge:   { text:'Acta lista ✓', bg:'#f0fdf4', color:'#14532d', border:'#bbf7d0' },
+        loader:  false,
+        info:    'Tu acta de nacimiento está lista. Descárgala usando el botón de abajo.',
+        infoClr: { bg:'#f0fdf4', border:'#bbf7d0', icon:'#22c55e', text:'#14532d' },
+        s1: { done:true, active:false, title:'Pago confirmado',   sub:'Verificado con MercadoPago ✓' },
+        s2: { done:true, active:false, title:'Acta generada',     sub:'Documento procesado ✓' },
+        s3: { done:true, active:false, title:'Acta lista',        sub:'Disponible para descarga ✓' },
+      },
+    };
+
+    const ICONS = ['credit_card', 'description', 'download'];
+
+    function renderState(tramite) {
+      const cfg = STATES[tramite.estado] || STATES.pendiente_pago;
+
+      // CURP
+      document.getElementById('curp-disp').textContent = tramite.curp;
+
+      // Badge
+      const badge = document.getElementById('badge');
+      badge.textContent = cfg.badge.text;
+      badge.style.background   = cfg.badge.bg;
+      badge.style.color        = cfg.badge.color;
+      badge.style.border       = '1px solid ' + cfg.badge.border;
+
+      // Loader
+      const loaderArea = document.getElementById('loader-area');
+      loaderArea.style.display = cfg.loader ? 'flex' : 'none';
+
+      // Steps
+      [1, 2, 3].forEach(n => {
+        const s = cfg['s' + n];
+        if (s.done)        setIconDone(n);
+        else if (s.active) setIconActive(n);
+        else               setIconPending(n, ICONS[n - 1]);
+        setTitle(n, s.title, s.done ? '#0d631b' : s.active ? '#111827' : '#9ca3af');
+        setSub(n, s.sub);
+      });
+
+      // Info box
+      const box  = document.getElementById('info-box');
+      const ic   = cfg.infoClr;
+      box.style.background = ic.bg;
+      box.style.border     = '1px solid ' + ic.border;
+      box.querySelector('.material-symbols-outlined').style.color = ic.icon || ic.text;
+      document.getElementById('info-text').textContent  = cfg.info;
+      document.getElementById('info-text').style.color  = ic.text;
+
+      // Download button
+      const btn = document.getElementById('btn-dl');
+      if (tramite.estado === 'acta_lista' && tramite.acta_url) {
+        btn.className = 'btn-dl ready';
+        btn.disabled  = false;
+        btn.onclick   = () => window.open(tramite.acta_url, '_blank');
+      } else {
+        btn.className = 'btn-dl disabled';
+        btn.disabled  = true;
+        btn.onclick   = null;
+      }
+
+      // Fecha
+      const d = new Date(tramite.created_at);
+      document.getElementById('fecha').textContent = 'Iniciado: ' + d.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' });
+    }
+
+    // ── Fetch & poll ──────────────────────────────────────────────────────
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/tramite/id/' + tramiteId);
+
+        if (!res.ok) {
+          document.getElementById('loading').style.display      = 'none';
+          document.getElementById('error-state').style.display  = 'block';
+          return;
+        }
+
+        const tramite = await res.json();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('card').style.display    = 'block';
+
+        renderState(tramite);
+
+        if (tramite.estado === 'acta_lista' && timer) {
+          clearInterval(timer);
+        }
+      } catch {
+        document.getElementById('loading').style.display      = 'none';
+        document.getElementById('error-state').style.display  = 'block';
+      }
+    }
+
+    fetchStatus();
+    timer = setInterval(fetchStatus, 8000);
+  </script>
+</body>
+</html>
