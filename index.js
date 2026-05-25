@@ -117,7 +117,14 @@ app.post('/api/tramite', async (req, res) => {
         notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
       }
     });
-    console.log('[MP] Preferencia OK:', mpPref.id, '->', mpPref.init_point);
+    // Log completo de la respuesta de MP para debug
+    console.log('[MP] Preferencia completa:', JSON.stringify({
+      id:                  mpPref.id,
+      init_point:          mpPref.init_point,
+      sandbox_init_point:  mpPref.sandbox_init_point,
+      collector_id:        mpPref.collector_id,
+      client_id:           mpPref.client_id,
+    }, null, 2));
 
     // Guardar el preference_id en el trámite
     await supabase
@@ -125,7 +132,6 @@ app.post('/api/tramite', async (req, res) => {
       .update({ preference_id: mpPref.id })
       .eq('id', tramite.id);
 
-    // En sandbox usamos sandbox_init_point, en producción init_point
     const checkoutUrl = process.env.MP_SANDBOX === 'true'
       ? mpPref.sandbox_init_point
       : mpPref.init_point;
