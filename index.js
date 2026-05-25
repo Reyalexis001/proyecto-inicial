@@ -94,23 +94,27 @@ app.post('/api/tramite', async (req, res) => {
 
     if (insertError) throw insertError;
 
-    // Crear preferencia de pago en MercadoPago (campos minimos)
+    // Crear preferencia — misma estructura del proyecto anterior que funcionaba
     const preference = new Preference(mpClient);
     const mpPref = await preference.create({
       body: {
         items: [{
           title:       'Acta de Nacimiento Digital',
           quantity:    1,
-          unit_price:  10,
+          unit_price:  5,
           currency_id: 'MXN'
         }],
+        metadata: {
+          tramite_id: tramite.id,
+          curp:       curpUpper
+        },
         external_reference: tramite.id,
-        notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`,
         back_urls: {
           success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
-          failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
-          pending: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`
-        }
+          failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`
+        },
+        auto_return: 'approved',
+        notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
       }
     });
     console.log('[MP] Preferencia OK:', mpPref.id, '->', mpPref.init_point);
@@ -208,31 +212,29 @@ app.post('/api/webhook/mercadopago', async (req, res) => {
 
     if (type !== 'payment' || !paymentId) return;
 
-    const payment    = new Payment(mpClient);
+    const payment     = new Payment(mpClient);
     const paymentData = await payment.get({ id: paymentId });
 
-    const tramiteId = paymentData.external_reference;
-    if (!tramiteId) return;
+    console.log('[Webhook] Pago recibido:', paymentData.id, '| Status:', paymentData.status);
 
-    let newEstado;
-    switch (paymentData.status) {
-      case 'approved':
-        newEstado = 'generando_acta'; break;
-      case 'pending':
-      case 'in_process':
-      case 'authorized':
-        newEstado = 'procesando_pago'; break;
-      default:
-        // rejected, cancelled, refunded → volver a pendiente
-        newEstado = 'pendiente_pago';
+    // Solo procesar pagos aprobados (igual que proyecto anterior)
+    if (paymentData.status !== 'approved') return;
+
+    // Buscar tramite por external_reference o por metadata.tramite_id
+    const tramiteId = paymentData.external_reference
+      || paymentData.metadata?.tramite_id;
+
+    if (!tramiteId) {
+      console.log('[Webhook] Sin tramite_id en el pago');
+      return;
     }
 
     await supabase
       .from('tramites')
-      .update({ estado: newEstado, payment_id: String(paymentData.id) })
+      .update({ estado: 'generando_acta', payment_id: String(paymentData.id) })
       .eq('id', tramiteId);
 
-    console.log(`[Webhook] Trámite ${tramiteId} → ${newEstado} (pago: ${paymentData.status})`);
+    console.log('[Webhook] Tramite', tramiteId, '→ generando_acta ✓');
 
   } catch (err) {
     console.error('[Webhook] Error:', err.message);
