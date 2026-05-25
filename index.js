@@ -94,31 +94,26 @@ app.post('/api/tramite', async (req, res) => {
 
     if (insertError) throw insertError;
 
-    // Crear preferencia de pago en MercadoPago
+    // Crear preferencia de pago en MercadoPago (campos minimos)
     const preference = new Preference(mpClient);
     const mpPref = await preference.create({
       body: {
         items: [{
-          id:         tramite.id,
-          title:      'Acta de Nacimiento Digital',
-          description: `CURP: ${curpUpper}`,
-          quantity:   1,
-          unit_price: 10,      // $10 MXN (mínimo MercadoPago México)
+          title:       'Acta de Nacimiento Digital',
+          quantity:    1,
+          unit_price:  10,
           currency_id: 'MXN'
         }],
         external_reference: tramite.id,
-        // Webhook que MP llamará cuando cambie el estado del pago
         notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`,
         back_urls: {
-          success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}&status=success`,
-          failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}&status=failure`,
-          pending: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}&status=pending`
-        },
-        auto_return: 'approved',
-        statement_descriptor: 'ACTAS MX',
-        payment_methods: { installments: 1 }
+          success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
+          failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
+          pending: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`
+        }
       }
     });
+    console.log('[MP] Preferencia OK:', mpPref.id, '->', mpPref.init_point);
 
     // Guardar el preference_id en el trámite
     await supabase
