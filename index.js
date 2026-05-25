@@ -103,7 +103,7 @@ app.post('/api/tramite', async (req, res) => {
           title:      'Acta de Nacimiento Digital',
           description: `CURP: ${curpUpper}`,
           quantity:   1,
-          unit_price: 5,       // $5 MXN
+          unit_price: 10,      // $10 MXN (mínimo MercadoPago México)
           currency_id: 'MXN'
         }],
         external_reference: tramite.id,
@@ -138,7 +138,7 @@ app.post('/api/tramite', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('[POST /api/tramite]', err.message);
+    console.error('[POST /api/tramite] FULL ERROR:', err);
     res.status(500).json({ error: 'Error al crear el trámite. Intenta de nuevo.' });
   }
 });
@@ -166,7 +166,7 @@ app.get('/api/tramite/curp/:curp', async (req, res) => {
     res.json({ found: true, tramites });
 
   } catch (err) {
-    console.error('[GET /api/tramite/curp]', err.message);
+    console.error('[GET tramite/curp] FULL ERROR:', err);
     res.status(500).json({ error: 'Error al consultar trámites.' });
   }
 });
@@ -190,7 +190,7 @@ app.get('/api/tramite/id/:id', async (req, res) => {
     res.json(tramite);
 
   } catch (err) {
-    console.error('[GET /api/tramite/id]', err.message);
+    console.error('[GET tramite/id] FULL ERROR:', err);
     res.status(500).json({ error: 'Error al consultar trámite.' });
   }
 });
@@ -329,7 +329,7 @@ app.get('/api/admin/tramites', verifyAdmin, async (req, res) => {
     res.json(data || []);
 
   } catch (err) {
-    console.error('[GET /api/admin/tramites]', err.message);
+    console.error('[GET admin/tramites] FULL ERROR:', err);
     res.status(500).json({ error: 'Error al cargar trámites.' });
   }
 });
@@ -391,20 +391,36 @@ app.post('/api/admin/tramites/:id/upload', verifyAdmin, upload.single('pdf'), as
   }
 });
 
-// ─── Fallback SPA: cualquier otra ruta sirve index.html ──────────────────
+// ─── Fallback SPA ────────────────────────────────────────────────────────
 app.get('*', (_req, res) => {
-  const indexPath = path.join(__dirname, 'public', 'index.html');
   const fs = require('fs');
+  const indexPath = path.join(__dirname, 'public', 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).json({ status: 'ok', message: 'API corriendo. Frontend pendiente.' });
+    res.status(200).json({ status: 'ok', message: 'API corriendo.' });
   }
 });
 
 // ── Arrancar servidor ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`✅ Servidor iniciado en puerto ${PORT}`);
-  console.log(`   Modo sandbox MP: ${process.env.MP_SANDBOX === 'true' ? 'SÍ' : 'NO'}`);
+  console.log(`   Supabase URL:  ${process.env.SUPABASE_URL}`);
+  console.log(`   Service Role:  ${process.env.SUPABASE_SERVICE_ROLE ? '✓ definido (' + process.env.SUPABASE_SERVICE_ROLE.slice(0,20) + '...)' : '✗ VACÍO'}`);
+  console.log(`   MP Token:      ${process.env.MP_ACCESS_TOKEN      ? '✓ definido' : '✗ VACÍO'}`);
+  console.log(`   Modo sandbox:  ${process.env.MP_SANDBOX === 'true' ? 'SÍ' : 'NO'}`);
+
+  // Prueba de conectividad con Supabase al arrancar
+  try {
+    const { error } = await supabase.from('tramites').select('id').limit(1);
+    if (error) {
+      console.error('⚠️  Supabase ERROR:', error.message, error.code);
+    } else {
+      console.log('✅ Supabase conectado correctamente');
+    }
+  } catch (e) {
+    console.error('❌ Supabase FETCH FAILED:', e.message);
+    console.error('   Verifica SUPABASE_URL y SUPABASE_SERVICE_ROLE en Render.');
+  }
 });
