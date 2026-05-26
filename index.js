@@ -132,10 +132,10 @@ app.post('/api/tramite', async (req, res) => {
       .update({ preference_id: mpPref.id })
       .eq('id', tramite.id);
 
-    // Siempre usar init_point de producción (MP_SANDBOX=false)
-    // Nunca mezclar sandbox_init_point con credenciales de producción
-    const checkoutUrl = mpPref.init_point;
-    console.log('[MP] Usando init_point producción:', checkoutUrl);
+    // Usar sandbox_init_point con TEST credentials, init_point con producción
+    const isSandbox = process.env.MP_SANDBOX === 'true';
+    const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
+    console.log('[MP] Modo:', isSandbox ? 'SANDBOX' : 'PRODUCCIÓN', '| URL:', checkoutUrl);
 
     res.json({
       tramite_id:  tramite.id,
