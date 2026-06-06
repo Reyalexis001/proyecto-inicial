@@ -132,10 +132,10 @@ app.post('/api/tramite', async (req, res) => {
       .update({ preference_id: mpPref.id })
       .eq('id', tramite.id);
 
-    // Usar sandbox_init_point con TEST credentials, init_point con producción
-    const isSandbox = process.env.MP_SANDBOX === 'true';
-    const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
-    console.log('[MP] Modo:', isSandbox ? 'SANDBOX' : 'PRODUCCIÓN', '| URL:', checkoutUrl);
+    // Siempre usar init_point de producción (MP_SANDBOX=false)
+    // Nunca mezclar sandbox_init_point con credenciales de producción
+    const checkoutUrl = mpPref.init_point;
+    console.log('[MP] Usando init_point producción:', checkoutUrl);
 
     res.json({
       tramite_id:  tramite.id,
@@ -392,6 +392,41 @@ app.post('/api/admin/tramites/:id/upload', verifyAdmin, upload.single('pdf'), as
   } catch (err) {
     console.error('[POST /api/admin/upload]', err.message);
     res.status(500).json({ error: 'Error al subir el acta. Intenta de nuevo.' });
+  }
+});
+
+
+/**
+ * POST /api/admin/tramites/:id/no-encontrada
+ */
+app.post('/api/admin/tramites/:id/no-encontrada', verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase.from('tramites').update({ estado: 'acta_no_encontrada' }).eq('id', id);
+    if (error) throw error;
+    console.log(`[Admin] Tramite ${id} -> acta_no_encontrada`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[no-encontrada]', err.message);
+    res.status(500).json({ error: 'Error al actualizar el tramite.' });
+  }
+});
+
+/**
+ * POST /api/admin/cleanup — Elimina PDFs con mas de 24h
+ */
+app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
+  try {
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: viejos } = await supabase.from('tramites').select('id').eq('estado','acta_lista').lt('updated_at', hace24h).not('acta_url','is',null);
+    let eliminados = 0;
+    for (const t of viejos || []) {
+      const { error } = await supabase.storage.from('actas').remove([`actas/${t.id}.pdf`]);
+      if (!error) { await supabase.from('tramites').update({ acta_url: null }).eq('id', t.id); eliminados++; }
+    }
+    res.json({ success: true, eliminados });
+  } catch (err) {
+    res.status(500).json({ error: 'Error en limpieza.' });
   }
 });
 

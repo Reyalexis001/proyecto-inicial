@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contacto — Sistema de Actas Mexicanas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; }
+    .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; line-height: 1; display: inline-block; }
+    header { background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb; padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .logo-icon { width: 36px; height: 36px; background: #0d631b; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    main { max-width: 680px; margin: 48px auto; width: 100%; padding: 0 24px 80px; flex: 1; }
+    .card { background: #fff; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 40px; margin-bottom: 20px; }
+    h1 { font-size: 26px; font-weight: 800; color: #111827; margin-bottom: 8px; }
+    p { font-size: 14px; color: #4b5563; line-height: 1.75; margin-bottom: 12px; }
+    .contact-row { display: flex; align-items: center; gap: 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 18px 20px; margin: 20px 0; }
+    .contact-icon { width: 44px; height: 44px; background: #0d631b; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .contact-label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+    .contact-value { font-size: 15px; font-weight: 700; color: #0d631b; }
+    .info-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 20px; margin: 16px 0; }
+    .info-box-title { font-size: 14px; font-weight: 700; color: #92400e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .info-box p { color: #92400e; margin: 0; font-size: 13px; }
+    .mp-email-img { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; display: flex; align-items: center; gap: 12px; }
+    .mp-email-img .material-symbols-outlined { font-size: 28px; color: #009ee3; font-variation-settings: 'FILL' 1; }
+    .mp-email-img div { font-size: 13px; color: #374151; }
+    .mp-email-img strong { display: block; font-size: 12px; color: #6b7280; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    h2 { font-size: 16px; font-weight: 700; color: #111827; margin: 24px 0 12px; }
+    ul { padding-left: 18px; }
+    li { font-size: 13px; color: #4b5563; line-height: 1.75; margin-bottom: 4px; }
+    footer { background: #fff; border-top: 1px solid #e5e7eb; padding: 24px; text-align: center; }
+    footer p { font-size: 12px; color: #9ca3af; }
+    a { color: #0d631b; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" style="display:flex;align-items:center;gap:12px;text-decoration:none;">
+      <div class="logo-icon">
+        <span class="material-symbols-outlined" style="color:#fff;font-size:20px;font-variation-settings:'FILL' 1;">account_balance</span>
+      </div>
+      <span style="font-weight:800;font-size:14px;color:#0d631b;">Sistema de Actas Mexicanas</span>
+    </a>
+    <a href="/" style="font-size:13px;color:#9ca3af;text-decoration:none;">← Inicio</a>
+  </header>
+
+  <main>
+    <div class="card">
+      <h1>Contacto y Soporte</h1>
+      <p>¿Tuviste algún problema con tu trámite? Estamos aquí para ayudarte. Escríbenos y te respondemos a la brevedad.</p>
+
+      <!-- Correo de contacto -->
+      <div class="contact-row">
+        <div class="contact-icon">
+          <span class="material-symbols-outlined" style="color:#fff;font-size:22px;font-variation-settings:'FILL' 1;">mail</span>
+        </div>
+        <div>
+          <div class="contact-label">Correo de soporte</div>
+          <div class="contact-value">reyalexis001@gmail.com</div>
+        </div>
+      </div>
+
+      <!-- Devoluciones -->
+      <div class="info-box">
+        <div class="info-box-title">
+          <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1;">currency_exchange</span>
+          ¿Problemas con tu acta? Obtén tu reembolso completo
+        </div>
+        <p>Si tu acta no fue encontrada o hubo un error en el proceso, tienes derecho al <strong>100% de tu dinero de vuelta</strong>. Escríbenos al correo de soporte indicando:</p>
+      </div>
+
+      <!-- Correo de MercadoPago -->
+      <div class="mp-email-img">
+        <span class="material-symbols-outlined" style="font-size:32px;color:#009ee3;font-variation-settings:'FILL' 1;">credit_card</span>
+        <div>
+          <strong>¿Cuál correo debo indicar?</strong>
+          El correo electrónico que ingresaste al momento de pagar en MercadoPago — es el mismo al que te llegó el comprobante de pago.
+        </div>
+      </div>
+
+      <h2>¿Cuándo aplica el reembolso?</h2>
+      <ul>
+        <li>Tu acta aparece como <strong>"Acta no encontrada"</strong> en el sistema.</li>
+        <li>No fue posible generar el acta por causas del sistema.</li>
+        <li>El acta entregada contiene errores no atribuibles a ti.</li>
+        <li>Pasaron más de 24 horas sin recibir tu acta.</li>
+      </ul>
+
+      <h2>Tiempos de respuesta</h2>
+      <ul>
+        <li><strong>Soporte general:</strong> 1 a 24 horas hábiles.</li>
+        <li><strong>Devoluciones:</strong> 1 a 3 días hábiles una vez confirmado el caso.</li>
+      </ul>
+
+      <p style="margin-top:20px;font-size:13px;color:#9ca3af;">También puedes revisar nuestra <a href="/terminos.html">política de devoluciones completa</a> para más información.</p>
+    </div>
+  </main>
+
+  <footer>
+    <p>© 2024 Gobierno de México — Sistema de Actas Mexicanas</p>
+  </footer>
+</body>
+</html>

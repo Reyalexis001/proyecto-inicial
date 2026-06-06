@@ -4,377 +4,302 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Panel Administrativo — Sistema de Actas Mexicanas</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: '#0d631b',
-            'primary-dark': '#084f14',
-            'primary-50': '#e8f5e9',
-          }
-        }
-      }
-    }
-  </script>
   <style>
-    * { font-family: 'Plus Jakarta Sans', sans-serif; }
-    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-family: 'Material Symbols Outlined'; }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-    .fade-up { animation: fadeUp 0.4s ease forwards; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; padding-top: 64px; }
+    .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; line-height: 1; display: inline-block; }
+    header { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb; height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon { width: 36px; height: 36px; background: #0d631b; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    main { flex: 1; max-width: 1100px; margin: 0 auto; width: 100%; padding: 32px 24px 80px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+    .card { background: #fff; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 8px; }
+    .stat { background: #fff; border-radius: 16px; border: 1px solid #e5e7eb; padding: 18px; }
+    .stat-label { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .stat-val { font-size: 28px; font-weight: 800; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge-blue { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-yellow { background: #fefce8; color: #92400e; border: 1px solid #fde68a; }
+    .mono { font-family: monospace; font-size: 13px; font-weight: 700; color: #111827; letter-spacing: 0.08em; }
+    .field-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+    .divider { border: none; border-top: 1px solid #f3f4f6; margin: 4px 0; }
+    /* Dropzone */
+    .drop-zone { border: 2px dashed #d1d5db; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .drop-zone:hover { border-color: #0d631b; background: #f0fdf4; }
+    .drop-zone.dragover { border-color: #0d631b; background: #dcfce7; }
+    /* Buttons */
+    .btn { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 13px 16px; border-radius: 12px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.2s, transform 0.1s; font-family: 'Plus Jakarta Sans', sans-serif; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-green { background: #0d631b; color: #fff; }
+    .btn-green:hover:not(:disabled) { background: #084f14; }
+    .btn-red { background: #fee2e2; color: #dc2626; border: 1.5px solid #fca5a5; }
+    .btn-red:hover:not(:disabled) { background: #fecaca; }
+    /* Spinner */
     @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation: spin 0.7s linear infinite; display:inline-block; vertical-align:middle; }
-    .card-enter { animation: fadeUp 0.3s ease forwards; }
-
-    /* File drop zone */
-    .drop-zone { transition: all 0.2s ease; }
-    .drop-zone.dragover { border-color: #0d631b; background: #e8f5e9; }
-
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
     /* Toast */
-    #toast { transition: all 0.3s ease; }
+    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: none; }
+    .toast-inner { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 14px; font-size: 13px; font-weight: 700; color: #fff; box-shadow: 0 8px 30px rgba(0,0,0,0.15); white-space: nowrap; }
+    /* Empty/loading */
+    #loading-state, #empty-state { text-align: center; padding: 80px 0; }
+    footer { background: #fff; border-top: 1px solid #e5e7eb; padding: 20px 24px; text-align: center; }
+    footer p { font-size: 12px; color: #9ca3af; }
+    /* Cleanup button */
+    .cleanup-btn { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; background: #f3f4f6; border: none; border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: background 0.2s; }
+    .cleanup-btn:hover { background: #e5e7eb; }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen flex flex-col">
+<body>
+
+  <!-- Toast -->
+  <div id="toast"><div id="toast-inner" class="toast-inner"></div></div>
 
   <!-- Header -->
-  <header class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm">
-    <div class="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
-          <span class="material-symbols-outlined text-white text-[20px]" style="font-variation-settings:'FILL' 1;">account_balance</span>
-        </div>
-        <div>
-          <div class="font-bold text-primary text-sm leading-tight">Sistema de Actas Mexicanas</div>
-          <div class="text-[11px] text-gray-400">Panel Administrativo</div>
-        </div>
+  <header>
+    <div class="logo">
+      <div class="logo-icon">
+        <span class="material-symbols-outlined" style="color:#fff;font-size:20px;font-variation-settings:'FILL' 1;">account_balance</span>
       </div>
-      <div class="flex items-center gap-4">
-        <button
-          onclick="loadTramites()"
-          class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors bg-gray-100 hover:bg-primary-50 px-3 py-2 rounded-lg"
-        >
-          <span class="material-symbols-outlined text-base">refresh</span>
-          Actualizar
-        </button>
-        <button
-          onclick="logout()"
-          class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
-        >
-          <span class="material-symbols-outlined text-base">logout</span>
-          Salir
-        </button>
+      <div>
+        <div style="font-weight:800;font-size:13px;color:#0d631b;">Sistema de Actas Mexicanas</div>
+        <div style="font-size:11px;color:#9ca3af;">Panel Administrativo</div>
       </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="cleanup-btn" onclick="doCleanup()">
+        <span class="material-symbols-outlined" style="font-size:16px;">auto_delete</span>
+        Limpiar PDFs +24h
+      </button>
+      <button onclick="loadTramites()" class="cleanup-btn">
+        <span class="material-symbols-outlined" style="font-size:16px;">refresh</span>
+        Actualizar
+      </button>
+      <button onclick="logout()" style="display:flex;align-items:center;gap:5px;font-size:12px;color:#ef4444;background:none;border:none;cursor:pointer;">
+        <span class="material-symbols-outlined" style="font-size:16px;">logout</span>
+        Salir
+      </button>
     </div>
   </header>
 
-  <!-- Toast notification -->
-  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden">
-    <div id="toast-inner" class="flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white">
-      <span id="toast-icon" class="material-symbols-outlined text-[18px]"></span>
-      <span id="toast-text"></span>
-    </div>
-  </div>
-
-  <!-- Main -->
-  <main class="flex-grow pt-24 pb-16 px-4 md:px-8 max-w-6xl mx-auto w-full">
-
-    <!-- Page header -->
-    <div class="mb-8">
-      <h1 class="text-2xl font-extrabold text-gray-900">Solicitudes Pendientes</h1>
-      <p class="text-sm text-gray-400 mt-1">Trámites que requieren que subas el PDF del acta.</p>
+  <main>
+    <!-- Page title -->
+    <div style="margin-bottom:24px;">
+      <h1 style="font-size:22px;font-weight:800;color:#111827;">Solicitudes Pendientes</h1>
+      <p style="font-size:13px;color:#9ca3af;margin-top:4px;">Trámites que requieren subir el PDF del acta o marcar como no encontrada.</p>
     </div>
 
-    <!-- Stats bar -->
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Pendientes</p>
-        <p id="stat-generando" class="text-3xl font-extrabold text-primary">—</p>
-        <p class="text-xs text-gray-400 mt-1">Requieren PDF</p>
+    <!-- Stats -->
+    <div class="stat-grid" style="margin-bottom:24px;">
+      <div class="stat">
+        <div class="stat-label">Requieren PDF</div>
+        <div class="stat-val" id="stat-generando" style="color:#0d631b;">—</div>
       </div>
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Procesando pago</p>
-        <p id="stat-procesando" class="text-3xl font-extrabold text-yellow-500">—</p>
-        <p class="text-xs text-gray-400 mt-1">Pago en revisión</p>
+      <div class="stat">
+        <div class="stat-label">Procesando pago</div>
+        <div class="stat-val" id="stat-procesando" style="color:#d97706;">—</div>
       </div>
-      <div class="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Total</p>
-        <p id="stat-total" class="text-3xl font-extrabold text-gray-700">—</p>
-        <p class="text-xs text-gray-400 mt-1">Solicitudes activas</p>
+      <div class="stat">
+        <div class="stat-label">Total activos</div>
+        <div class="stat-val" id="stat-total" style="color:#374151;">—</div>
       </div>
     </div>
 
-    <!-- Loading state -->
-    <div id="loading-state" class="text-center py-20">
-      <div class="w-10 h-10 border-4 border-gray-200 border-t-primary rounded-full mx-auto mb-4" style="animation: spin 1s linear infinite;"></div>
-      <p class="text-gray-400 text-sm">Cargando solicitudes...</p>
+    <!-- Loading -->
+    <div id="loading-state">
+      <div style="width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#0d631b;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+      <p style="font-size:13px;color:#9ca3af;">Cargando solicitudes...</p>
     </div>
 
-    <!-- Empty state -->
-    <div id="empty-state" class="hidden text-center py-20">
-      <div class="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
-        <span class="material-symbols-outlined text-primary text-4xl" style="font-variation-settings:'FILL' 1;">task_alt</span>
+    <!-- Empty -->
+    <div id="empty-state" style="display:none;">
+      <div style="width:64px;height:64px;background:#dcfce7;border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <span class="material-symbols-outlined" style="color:#0d631b;font-size:32px;font-variation-settings:'FILL' 1;">task_alt</span>
       </div>
-      <p class="text-gray-700 font-bold text-lg">¡Todo al día!</p>
-      <p class="text-gray-400 text-sm mt-2">No hay solicitudes pendientes por atender.</p>
+      <p style="font-weight:700;color:#111827;font-size:16px;">¡Todo al día!</p>
+      <p style="font-size:13px;color:#9ca3af;margin-top:6px;">No hay solicitudes pendientes.</p>
     </div>
 
-    <!-- Cards grid -->
-    <div id="cards-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    </div>
-
+    <!-- Cards -->
+    <div id="cards-grid" class="grid" style="display:none;"></div>
   </main>
 
-  <!-- Footer -->
-  <footer class="bg-white border-t border-gray-100 py-6 px-4 text-center">
-    <p class="text-xs text-gray-300">© 2024 Gobierno de México — Sistema de Actas Mexicanas · Admin</p>
+  <footer>
+    <p>© 2024 Gobierno de México — Sistema de Actas Mexicanas · Admin</p>
   </footer>
 
   <script>
     const token = localStorage.getItem('admin_token');
     if (!token) window.location.href = '/admin/login.html';
 
-    function logout() {
-      localStorage.removeItem('admin_token');
-      window.location.href = '/admin/login.html';
-    }
+    function logout() { localStorage.removeItem('admin_token'); window.location.href = '/admin/login.html'; }
 
     function showToast(msg, type = 'success') {
-      const toast = document.getElementById('toast');
       const inner = document.getElementById('toast-inner');
-      const icon = document.getElementById('toast-icon');
-      const text = document.getElementById('toast-text');
-
-      icon.textContent = type === 'success' ? 'check_circle' : 'error';
-      icon.style.fontVariationSettings = "'FILL' 1";
-      text.textContent = msg;
-      inner.className = `flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white ${
-        type === 'success' ? 'bg-primary' : 'bg-red-500'
-      }`;
-
-      toast.classList.remove('hidden');
-      setTimeout(() => toast.classList.add('hidden'), 3500);
+      inner.style.background = type === 'success' ? '#0d631b' : type === 'error' ? '#ef4444' : '#374151';
+      inner.textContent = msg;
+      const toast = document.getElementById('toast');
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 3500);
     }
 
-    function formatDate(dateStr) {
-      return new Date(dateStr).toLocaleString('es-MX', {
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      });
-    }
-
-    function getBadge(estado) {
-      if (estado === 'generando_acta') {
-        return `<span class="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1">
-          <span class="w-1.5 h-1.5 bg-blue-500 rounded-full inline-block"></span>
-          Requiere PDF
-        </span>`;
-      }
-      return `<span class="bg-yellow-50 text-yellow-700 border border-yellow-200 px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1">
-        <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full inline-block"></span>
-        Procesando pago
-      </span>`;
-    }
-
-    function createCard(tramite) {
-      const canUpload = tramite.estado === 'generando_acta';
-      return `
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 card-enter flex flex-col gap-4" id="card-${tramite.id}">
-
-          <!-- Header -->
-          <div class="flex items-start justify-between">
-            <div>
-              <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1">CURP</p>
-              <p class="font-mono font-bold text-gray-800 text-sm tracking-widest">${tramite.curp}</p>
-            </div>
-            ${getBadge(tramite.estado)}
-          </div>
-
-          <!-- Info -->
-          <div class="border-t border-gray-50 pt-4 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="text-xs text-gray-400">Trámite</span>
-              <span class="text-xs font-semibold text-gray-700">Acta de Nacimiento</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-xs text-gray-400">Fecha</span>
-              <span class="text-xs font-medium text-gray-600">${formatDate(tramite.created_at)}</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-xs text-gray-400">ID</span>
-              <span class="text-[10px] font-mono text-gray-300">${tramite.id.split('-')[0]}...</span>
-            </div>
-          </div>
-
-          ${canUpload ? `
-          <!-- Upload zone -->
-          <div class="mt-1">
-            <div
-              id="dropzone-${tramite.id}"
-              class="drop-zone border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-primary hover:bg-primary-50 transition-all"
-              onclick="document.getElementById('file-${tramite.id}').click()"
-              ondragover="event.preventDefault(); this.classList.add('dragover')"
-              ondragleave="this.classList.remove('dragover')"
-              ondrop="handleDrop(event, '${tramite.id}')"
-            >
-              <span class="material-symbols-outlined text-gray-300 text-3xl mb-1 block" style="font-variation-settings:'FILL' 1;">upload_file</span>
-              <p class="text-xs text-gray-400 font-medium">Arrastra el PDF aquí o</p>
-              <p class="text-xs text-primary font-semibold mt-0.5">haz clic para seleccionar</p>
-            </div>
-            <p id="filename-${tramite.id}" class="text-xs text-gray-400 text-center mt-2 hidden"></p>
-            <input
-              type="file"
-              accept="application/pdf"
-              id="file-${tramite.id}"
-              class="hidden"
-              onchange="onFileSelected('${tramite.id}')"
-            />
-            <button
-              id="upload-btn-${tramite.id}"
-              onclick="uploadPDF('${tramite.id}')"
-              class="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2 mt-3 shadow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled
-            >
-              <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1;">cloud_upload</span>
-              Subir PDF del Acta
-            </button>
-          </div>
-          ` : `
-          <!-- Waiting for payment -->
-          <div class="bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-3 flex items-center gap-2.5">
-            <span class="material-symbols-outlined text-yellow-500 text-base" style="font-variation-settings:'FILL' 1;">hourglass_top</span>
-            <p class="text-xs text-yellow-700">Esperando confirmación de pago para habilitar subida.</p>
-          </div>
-          `}
-        </div>
-      `;
+    function formatDate(d) {
+      return new Date(d).toLocaleString('es-MX', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     }
 
     function onFileSelected(id) {
-      const input = document.getElementById(`file-${id}`);
-      const btn = document.getElementById(`upload-btn-${id}`);
-      const nameEl = document.getElementById(`filename-${id}`);
-
-      if (input.files[0]) {
-        nameEl.textContent = `📄 ${input.files[0].name}`;
-        nameEl.classList.remove('hidden');
-        btn.disabled = false;
-      }
+      const file = document.getElementById('file-' + id).files[0];
+      const btn  = document.getElementById('upload-btn-' + id);
+      const name = document.getElementById('filename-' + id);
+      if (file) { name.textContent = '📄 ' + file.name; name.style.display = 'block'; btn.disabled = false; }
     }
 
-    function handleDrop(event, id) {
-      event.preventDefault();
-      document.getElementById(`dropzone-${id}`).classList.remove('dragover');
-      const file = event.dataTransfer.files[0];
+    function handleDrop(e, id) {
+      e.preventDefault();
+      document.getElementById('dropzone-' + id).classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
       if (file && file.type === 'application/pdf') {
-        const input = document.getElementById(`file-${id}`);
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        input.files = dt.files;
+        const input = document.getElementById('file-' + id);
+        const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
         onFileSelected(id);
       }
     }
 
     async function uploadPDF(id) {
-      const input = document.getElementById(`file-${id}`);
-      const btn = document.getElementById(`upload-btn-${id}`);
-
+      const input = document.getElementById('file-' + id);
+      const btn   = document.getElementById('upload-btn-' + id);
       if (!input.files[0]) return;
-
-      const originalHTML = btn.innerHTML;
+      const orig = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>&nbsp; Subiendo...';
-
-      const formData = new FormData();
-      formData.append('pdf', input.files[0]);
-
+      btn.innerHTML = '<span class="spinner"></span> Subiendo...';
+      const fd = new FormData();
+      fd.append('pdf', input.files[0]);
       try {
-        const res = await fetch(`/api/admin/tramites/${id}/upload`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: formData
-        });
+        const res  = await fetch('/api/admin/tramites/' + id + '/upload', { method:'POST', headers:{ Authorization:'Bearer '+token }, body:fd });
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.error);
-
-        showToast('✓ Acta subida correctamente. El usuario ya puede descargarla.');
-
-        // Remove card with fade out
-        const card = document.getElementById(`card-${id}`);
-        card.style.opacity = '0';
-        card.style.transform = 'scale(0.95)';
-        card.style.transition = 'all 0.3s ease';
-        setTimeout(() => {
-          card.remove();
-          checkEmptyState();
-        }, 300);
-
-      } catch (err) {
-        showToast(err.message || 'Error al subir el archivo.', 'error');
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
+        showToast('✓ Acta subida correctamente');
+        removeCard(id);
+      } catch(e) {
+        showToast(e.message || 'Error al subir.', 'error');
+        btn.disabled = false; btn.innerHTML = orig;
       }
     }
 
-    function checkEmptyState() {
-      const grid = document.getElementById('cards-grid');
-      if (!grid.children.length) {
-        grid.classList.add('hidden');
-        document.getElementById('empty-state').classList.remove('hidden');
-        document.getElementById('stat-generando').textContent = '0';
-        document.getElementById('stat-total').textContent = '0';
+    async function marcarNoEncontrada(id) {
+      if (!confirm('¿Confirmas que el acta NO fue encontrada? El usuario verá instrucciones de reembolso.')) return;
+      const btn = document.getElementById('noencontrada-btn-' + id);
+      const orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="border-top-color:#dc2626;border-color:rgba(220,38,38,0.2);"></span> Procesando...';
+      try {
+        const res  = await fetch('/api/admin/tramites/' + id + '/no-encontrada', { method:'POST', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Trámite marcado como "acta no encontrada"', 'info');
+        removeCard(id);
+      } catch(e) {
+        showToast(e.message || 'Error.', 'error');
+        btn.disabled = false; btn.innerHTML = orig;
       }
+    }
+
+    function removeCard(id) {
+      const card = document.getElementById('card-' + id);
+      if (card) { card.style.opacity = '0'; card.style.transform = 'scale(0.95)'; card.style.transition = 'all 0.3s'; setTimeout(() => { card.remove(); checkEmpty(); }, 300); }
+    }
+
+    function checkEmpty() {
+      const grid = document.getElementById('cards-grid');
+      if (!grid.children.length) { grid.style.display = 'none'; document.getElementById('empty-state').style.display = 'block'; }
+    }
+
+    function createCard(t) {
+      const badge = t.estado === 'generando_acta'
+        ? '<span class="badge badge-blue"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;"></span>Requiere PDF</span>'
+        : '<span class="badge badge-yellow"><span style="width:6px;height:6px;background:#d97706;border-radius:50%;display:inline-block;"></span>Procesando pago</span>';
+      const canUpload = t.estado === 'generando_acta';
+
+      return `
+        <div class="card" id="card-${t.id}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div class="field-label">CURP</div>
+              <div class="mono">${t.curp}</div>
+            </div>
+            ${badge}
+          </div>
+          <hr class="divider">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;justify-content:space-between;">
+              <span style="font-size:12px;color:#9ca3af;">Trámite</span>
+              <span style="font-size:12px;font-weight:600;color:#374151;">Acta de Nacimiento</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="font-size:12px;color:#9ca3af;">Fecha</span>
+              <span style="font-size:12px;color:#374151;">${formatDate(t.created_at)}</span>
+            </div>
+          </div>
+          ${canUpload ? `
+          <hr class="divider">
+          <div class="drop-zone" id="dropzone-${t.id}" onclick="document.getElementById('file-${t.id}').click()"
+            ondragover="event.preventDefault();this.classList.add('dragover')"
+            ondragleave="this.classList.remove('dragover')"
+            ondrop="handleDrop(event,'${t.id}')">
+            <span class="material-symbols-outlined" style="color:#9ca3af;font-size:28px;margin-bottom:6px;display:block;font-variation-settings:'FILL' 1;">upload_file</span>
+            <div style="font-size:12px;color:#9ca3af;font-weight:600;">Arrastra el PDF o haz clic</div>
+          </div>
+          <p id="filename-${t.id}" style="font-size:11px;color:#6b7280;text-align:center;display:none;"></p>
+          <input type="file" accept="application/pdf" id="file-${t.id}" style="display:none;" onchange="onFileSelected('${t.id}')">
+          <button class="btn btn-green" id="upload-btn-${t.id}" onclick="uploadPDF('${t.id}')" disabled>
+            <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1;">cloud_upload</span>
+            Subir PDF del Acta
+          </button>
+          <button class="btn btn-red" id="noencontrada-btn-${t.id}" onclick="marcarNoEncontrada('${t.id}')">
+            <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1;">search_off</span>
+            Acta No Encontrada
+          </button>
+          ` : `
+          <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">
+            <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1;">hourglass_top</span>
+            Esperando confirmación de pago.
+          </div>
+          `}
+        </div>`;
     }
 
     async function loadTramites() {
-      document.getElementById('loading-state').classList.remove('hidden');
-      document.getElementById('empty-state').classList.add('hidden');
-      document.getElementById('cards-grid').classList.add('hidden');
-
+      document.getElementById('loading-state').style.display = 'block';
+      document.getElementById('empty-state').style.display   = 'none';
+      document.getElementById('cards-grid').style.display    = 'none';
       try {
-        const res = await fetch('/api/admin/tramites', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (res.status === 401) {
-          logout();
-          return;
-        }
-
-        const tramites = await res.json();
-
-        document.getElementById('loading-state').classList.add('hidden');
-
-        // Stats
-        const generando = tramites.filter(t => t.estado === 'generando_acta').length;
-        const procesando = tramites.filter(t => t.estado === 'procesando_pago').length;
-        document.getElementById('stat-generando').textContent = generando;
-        document.getElementById('stat-procesando').textContent = procesando;
-        document.getElementById('stat-total').textContent = tramites.length;
-
-        if (!tramites.length) {
-          document.getElementById('empty-state').classList.remove('hidden');
-          return;
-        }
-
+        const res = await fetch('/api/admin/tramites', { headers:{ Authorization:'Bearer '+token } });
+        if (res.status === 401) { logout(); return; }
+        const data = await res.json();
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('stat-generando').textContent  = data.filter(t => t.estado==='generando_acta').length;
+        document.getElementById('stat-procesando').textContent = data.filter(t => t.estado==='procesando_pago').length;
+        document.getElementById('stat-total').textContent      = data.length;
+        if (!data.length) { document.getElementById('empty-state').style.display = 'block'; return; }
         const grid = document.getElementById('cards-grid');
-        grid.innerHTML = tramites.map(createCard).join('');
-        grid.classList.remove('hidden');
-
-      } catch {
-        document.getElementById('loading-state').classList.add('hidden');
-        showToast('Error al cargar solicitudes. Recarga la página.', 'error');
-      }
+        grid.innerHTML = data.map(createCard).join('');
+        grid.style.display = 'grid';
+      } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
     }
 
-    // Load on mount
-    loadTramites();
+    async function doCleanup() {
+      try {
+        const res  = await fetch('/api/admin/cleanup', { method:'POST', headers:{ Authorization:'Bearer '+token } });
+        const data = await res.json();
+        if (data.success) showToast(`🗑️ ${data.eliminados} PDFs eliminados correctamente`);
+        else showToast('Error en limpieza.', 'error');
+      } catch { showToast('Error al limpiar.', 'error'); }
+    }
 
-    // Auto-refresh every 30 seconds
+    loadTramites();
     setInterval(loadTramites, 30000);
   </script>
 </body>

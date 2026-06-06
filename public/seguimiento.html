@@ -134,6 +134,25 @@
         Descargar PDF del Acta
       </button>
 
+      <!-- Reembolso (solo visible cuando acta_no_encontrada) -->
+      <div id="refund-box" style="display:none;width:100%;background:#fef2f2;border:1px solid #fca5a5;border-radius:14px;padding:18px;margin-top:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span class="material-symbols-outlined" style="color:#ef4444;font-size:20px;font-variation-settings:'FILL' 1;">currency_exchange</span>
+          <span style="font-size:14px;font-weight:700;color:#991b1b;">Obtén tu reembolso completo</span>
+        </div>
+        <p style="font-size:13px;color:#991b1b;line-height:1.6;margin-bottom:10px;">
+          Escribe al correo <strong>reyalexis001@gmail.com</strong> indicando el correo con el que pagaste en MercadoPago:
+        </p>
+        <div style="background:#fff;border:1px solid #fca5a5;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;">
+          <span class="material-symbols-outlined" style="color:#009ee3;font-size:24px;font-variation-settings:'FILL' 1;">credit_card</span>
+          <div style="font-size:12px;color:#6b7280;line-height:1.5;">Es el correo al que te llegó el <strong>comprobante de pago de MercadoPago</strong> al momento de realizar la transacción.</div>
+        </div>
+        <a href="/contacto.html" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;background:#ef4444;color:#fff;padding:11px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none;">
+          <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1;">mail</span>
+          Ver instrucciones de reembolso
+        </a>
+      </div>
+
       <!-- Footer -->
       <div style="width:100%;margin-top:20px;display:flex;justify-content:space-between;align-items:center;">
         <p id="fecha" style="font-size:11px;color:#d1d5db;"></p>
@@ -216,6 +235,15 @@
         s2: { done:true, active:false, title:'Acta generada',     sub:'Documento procesado ✓' },
         s3: { done:true, active:false, title:'Acta lista',        sub:'Disponible para descarga ✓' },
       },
+      acta_no_encontrada: {
+        badge:   { text:'Acta no encontrada', bg:'#fef2f2', color:'#991b1b', border:'#fca5a5' },
+        loader:  false,
+        info:    'No fue posible encontrar tu acta. Tienes derecho al 100% de tu dinero de vuelta.',
+        infoClr: { bg:'#fef2f2', border:'#fca5a5', icon:'#ef4444', text:'#991b1b' },
+        s1: { done:true,  active:false, title:'Pago confirmado',      sub:'Verificado con MercadoPago ✓' },
+        s2: { done:false, active:false, title:'Acta no encontrada',   sub:'No fue posible obtener el documento' },
+        s3: { done:false, active:false, title:'Reembolso disponible', sub:'Escríbenos para tu devolución' },
+      },
     };
 
     const ICONS = ['credit_card', 'description', 'download'];
@@ -258,14 +286,24 @@
 
       // Download button
       const btn = document.getElementById('btn-dl');
+      const refundBox = document.getElementById('refund-box');
       if (tramite.estado === 'acta_lista' && tramite.acta_url) {
         btn.className = 'btn-dl ready';
         btn.disabled  = false;
         btn.onclick   = () => window.open(tramite.acta_url, '_blank');
+        refundBox.style.display = 'none';
+      } else if (tramite.estado === 'acta_no_encontrada') {
+        btn.className = 'btn-dl disabled';
+        btn.disabled  = true;
+        btn.onclick   = null;
+        btn.style.display = 'none';
+        refundBox.style.display = 'block';
       } else {
         btn.className = 'btn-dl disabled';
         btn.disabled  = true;
         btn.onclick   = null;
+        btn.style.display = '';
+        refundBox.style.display = 'none';
       }
 
       // Fecha
