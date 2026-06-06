@@ -430,6 +430,46 @@ app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
   }
 });
 
+
+/**
+ * GET /api/cleanup-auto
+ * Llamado automáticamente por cron-job.org cada 24h.
+ * Protegido con CLEANUP_SECRET en el header.
+ */
+app.get('/api/cleanup-auto', async (req, res) => {
+  const secret = req.headers['x-cleanup-secret'];
+  if (secret !== process.env.CLEANUP_SECRET) {
+    return res.status(401).json({ error: 'No autorizado.' });
+  }
+  try {
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: viejos } = await supabase
+      .from('tramites')
+      .select('id')
+      .eq('estado', 'acta_lista')
+      .lt('updated_at', hace24h)
+      .not('acta_url', 'is', null);
+
+    let eliminados = 0;
+    for (const t of viejos || []) {
+      const { error } = await supabase.storage
+        .from('actas')
+        .remove([`actas/${t.id}.pdf`]);
+      if (!error) {
+        await supabase.from('tramites')
+          .update({ acta_url: null })
+          .eq('id', t.id);
+        eliminados++;
+      }
+    }
+    console.log(`[Cleanup Auto] ${eliminados} PDFs eliminados`);
+    res.json({ success: true, eliminados, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('[Cleanup Auto]', err.message);
+    res.status(500).json({ error: 'Error en limpieza.' });
+  }
+});
+
 // ─── Fallback SPA ────────────────────────────────────────────────────────
 app.get('*', (_req, res) => {
   const fs = require('fs');
