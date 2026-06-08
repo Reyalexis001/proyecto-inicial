@@ -241,9 +241,13 @@
         const res  = await fetch('/api/tramite', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({curp}) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al procesar.');
-        window.location.href = (data.existing || !data.redirect_url)
-          ? '/seguimiento.html?id=' + data.tramite_id
-          : data.redirect_url;
+        // Si hay URL de pago (reintento o nuevo), redirigir a MP
+        // Si no hay URL (ya está en proceso), ir a seguimiento
+        if (data.redirect_url) {
+          window.location.href = data.redirect_url;
+        } else {
+          window.location.href = '/seguimiento.html?id=' + data.tramite_id;
+        }
       } catch(e) {
         errEl.textContent = e.message || 'Error de conexión.';
         errEl.style.display = 'block';
