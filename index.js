@@ -513,6 +513,32 @@ app.get('/api/cleanup-auto', async (req, res) => {
   }
 });
 
+
+/**
+ * GET /api/admin/stats
+ * Estadísticas generales para el panel admin.
+ */
+app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tramites')
+      .select('estado');
+    if (error) throw error;
+    const stats = {
+      actas_completadas: data.filter(t => t.estado === 'acta_lista').length,
+      generando:         data.filter(t => t.estado === 'generando_acta').length,
+      procesando:        data.filter(t => t.estado === 'procesando_pago').length,
+      pendiente:         data.filter(t => t.estado === 'pendiente_pago').length,
+      no_encontradas:    data.filter(t => t.estado === 'acta_no_encontrada').length,
+      total:             data.length,
+    };
+    res.json(stats);
+  } catch (err) {
+    console.error('[stats]', err.message);
+    res.status(500).json({ error: 'Error al obtener estadísticas.' });
+  }
+});
+
 // ─── Fallback SPA ────────────────────────────────────────────────────────
 app.get('*', (_req, res) => {
   const fs = require('fs');

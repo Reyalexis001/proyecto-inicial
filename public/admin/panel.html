@@ -93,10 +93,14 @@
     </div>
 
     <!-- Stats -->
-    <div class="stat-grid" style="margin-bottom:24px;">
+    <div class="stat-grid" style="margin-bottom:24px;grid-template-columns:repeat(4,1fr);">
+      <div class="stat" style="border-left:4px solid #0d631b;">
+        <div class="stat-label">Actas completadas</div>
+        <div class="stat-val" id="stat-completadas" style="color:#0d631b;">—</div>
+      </div>
       <div class="stat">
         <div class="stat-label">Requieren PDF</div>
-        <div class="stat-val" id="stat-generando" style="color:#0d631b;">—</div>
+        <div class="stat-val" id="stat-generando" style="color:#2563eb;">—</div>
       </div>
       <div class="stat">
         <div class="stat-label">Procesando pago</div>
@@ -276,13 +280,18 @@
       document.getElementById('empty-state').style.display   = 'none';
       document.getElementById('cards-grid').style.display    = 'none';
       try {
-        const res = await fetch('/api/admin/tramites', { headers:{ Authorization:'Bearer '+token } });
+        const [res, statsRes] = await Promise.all([
+          fetch('/api/admin/tramites', { headers:{ Authorization:'Bearer '+token } }),
+          fetch('/api/admin/stats',    { headers:{ Authorization:'Bearer '+token } })
+        ]);
         if (res.status === 401) { logout(); return; }
-        const data = await res.json();
-        document.getElementById('loading-state').style.display = 'none';
-        document.getElementById('stat-generando').textContent  = data.filter(t => t.estado==='generando_acta').length;
-        document.getElementById('stat-procesando').textContent = data.filter(t => t.estado==='procesando_pago').length;
-        document.getElementById('stat-total').textContent      = data.length;
+        const data  = await res.json();
+        const stats = statsRes.ok ? await statsRes.json() : {};
+        document.getElementById('loading-state').style.display  = 'none';
+        document.getElementById('stat-completadas').textContent = stats.actas_completadas ?? '—';
+        document.getElementById('stat-generando').textContent   = data.filter(t => t.estado==='generando_acta').length;
+        document.getElementById('stat-procesando').textContent  = data.filter(t => t.estado==='procesando_pago').length;
+        document.getElementById('stat-total').textContent       = data.length;
         if (!data.length) { document.getElementById('empty-state').style.display = 'block'; return; }
         const grid = document.getElementById('cards-grid');
         grid.innerHTML = data.map(createCard).join('');
