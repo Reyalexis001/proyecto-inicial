@@ -77,6 +77,37 @@ app.post('/api/tramite', async (req, res) => {
       .maybeSingle();
 
     if (existing) {
+      // Si está pendiente de pago, generar nueva preferencia para reintentar
+      if (existing.estado === 'pendiente_pago') {
+        try {
+          const preference = new Preference(mpClient);
+          const mpPref = await preference.create({
+            body: {
+              items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: 10, currency_id: 'MXN' }],
+              metadata: { tramite_id: existing.id, curp: curpUpper },
+              external_reference: existing.id,
+              back_urls: {
+                success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`,
+                failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`
+              },
+              auto_return: 'approved',
+              notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
+            }
+          });
+          const isSandbox = process.env.MP_SANDBOX === 'true';
+          const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
+          return res.json({
+            tramite_id: existing.id,
+            redirect_url: checkoutUrl,
+            existing: true,
+            retry: true,
+            message: 'Redirigiendo al pago...'
+          });
+        } catch (mpErr) {
+          console.error('[Retry MP]', mpErr.message);
+        }
+      }
+      // Para otros estados, solo devolver el trámite activo
       return res.json({
         tramite_id: existing.id,
         redirect_url: null,
@@ -443,6 +474,8 @@ app.get('/api/cleanup-auto', async (req, res) => {
   }
   try {
     const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Borrar PDFs de Storage para actas listas con +24h
     const { data: viejos } = await supabase
       .from('tramites')
       .select('id')
@@ -462,8 +495,18 @@ app.get('/api/cleanup-auto', async (req, res) => {
         eliminados++;
       }
     }
-    console.log(`[Cleanup Auto] ${eliminados} PDFs eliminados`);
-    res.json({ success: true, eliminados, timestamp: new Date().toISOString() });
+
+    // 2. Borrar registros completos con +24h en estado final o pendiente_pago
+    const { data: deleted } = await supabase
+      .from('tramites')
+      .delete()
+      .in('estado', ['acta_lista', 'acta_no_encontrada', 'pendiente_pago'])
+      .lt('updated_at', hace24h)
+      .select('id');
+
+    const registrosBorrados = deleted?.length || 0;
+    console.log(`[Cleanup Auto] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
+    res.json({ success: true, eliminados, registrosBorrados, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[Cleanup Auto]', err.message);
     res.status(500).json({ error: 'Error en limpieza.' });
