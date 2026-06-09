@@ -92,6 +92,22 @@
       <p style="font-size:13px;color:#9ca3af;margin-top:4px;">Trámites que requieren subir el PDF del acta o marcar como no encontrada.</p>
     </div>
 
+    <!-- Buscador -->
+    <div style="margin-bottom:20px;position:relative;max-width:420px;">
+      <span class="material-symbols-outlined" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:20px;">search</span>
+      <input
+        id="buscador"
+        type="text"
+        placeholder="Buscar por CURP..."
+        oninput="filtrarTramites()"
+        style="width:100%;padding:12px 16px 12px 44px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:14px;font-family:'Plus Jakarta Sans',sans-serif;background:#fff;color:#111827;outline:none;text-transform:uppercase;letter-spacing:0.05em;transition:border-color 0.2s;"
+        onfocus="this.style.borderColor='#0d631b'" onblur="this.style.borderColor='#e5e7eb'"
+      >
+      <button onclick="limpiarBusqueda()" id="btn-limpiar" style="display:none;position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9ca3af;">
+        <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+      </button>
+    </div>
+
     <!-- Stats -->
     <div class="stat-grid" style="margin-bottom:24px;grid-template-columns:repeat(2,1fr);max-width:500px;">
       <div class="stat" style="border-left:4px solid #0d631b;">
@@ -269,6 +285,41 @@
         </div>`;
     }
 
+    // Datos completos para filtrar
+    let todosLosTramites = [];
+
+    function filtrarTramites() {
+      const q = document.getElementById('buscador').value.trim().toUpperCase();
+      document.getElementById('btn-limpiar').style.display = q ? 'block' : 'none';
+      const filtrados = q ? todosLosTramites.filter(t => t.curp.includes(q)) : todosLosTramites;
+      renderCards(filtrados);
+    }
+
+    function limpiarBusqueda() {
+      document.getElementById('buscador').value = '';
+      document.getElementById('btn-limpiar').style.display = 'none';
+      renderCards(todosLosTramites);
+    }
+
+    function renderCards(lista) {
+      const grid = document.getElementById('cards-grid');
+      const empty = document.getElementById('empty-state');
+      if (!lista.length) {
+        grid.style.display = 'none';
+        empty.style.display = 'block';
+        empty.innerHTML = `
+          <div style="width:64px;height:64px;background:#f3f4f6;border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+            <span class="material-symbols-outlined" style="color:#9ca3af;font-size:32px;">search_off</span>
+          </div>
+          <p style="font-weight:700;color:#111827;font-size:16px;">${todosLosTramites.length ? 'Sin resultados' : '¡Todo al día!'}</p>
+          <p style="font-size:13px;color:#9ca3af;margin-top:6px;">${todosLosTramites.length ? 'No hay trámites con ese CURP.' : 'No hay solicitudes pendientes.'}</p>`;
+        return;
+      }
+      empty.style.display = 'none';
+      grid.innerHTML = lista.map(createCard).join('');
+      grid.style.display = 'grid';
+    }
+
     async function loadTramites() {
       document.getElementById('loading-state').style.display = 'block';
       document.getElementById('empty-state').style.display   = 'none';
@@ -284,12 +335,11 @@
         document.getElementById('loading-state').style.display  = 'none';
         document.getElementById('stat-completadas').textContent = stats.actas_completadas ?? '—';
         document.getElementById('stat-generando').textContent   = data.filter(t => t.estado==='generando_acta').length;
-        document.getElementById('stat-procesando').textContent  = data.filter(t => t.estado==='procesando_pago').length;
-        document.getElementById('stat-total').textContent       = data.length;
-        if (!data.length) { document.getElementById('empty-state').style.display = 'block'; return; }
-        const grid = document.getElementById('cards-grid');
-        grid.innerHTML = data.map(createCard).join('');
-        grid.style.display = 'grid';
+        todosLosTramites = data;
+        // Mantener filtro activo si el admin estaba buscando
+        const q = document.getElementById('buscador').value.trim().toUpperCase();
+        const filtrados = q ? data.filter(t => t.curp.includes(q)) : data;
+        renderCards(filtrados);
       } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
     }
 
