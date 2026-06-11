@@ -92,6 +92,22 @@
       <p style="font-size:13px;color:#9ca3af;margin-top:4px;">Trámites que requieren subir el PDF del acta o marcar como no encontrada.</p>
     </div>
 
+    <!-- Filtros por estado -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <button id="filtro-todos" onclick="setFiltro('todos')"
+        style="padding:8px 18px;border-radius:999px;border:2px solid #0d631b;background:#0d631b;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all 0.2s;">
+        Todos
+      </button>
+      <button id="filtro-qr" onclick="setFiltro('qr')"
+        style="padding:8px 18px;border-radius:999px;border:2px solid #e5e7eb;background:#fff;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all 0.2s;">
+        🏖️ Quintana Roo (<span id="count-qr">0</span>)
+      </button>
+      <button id="filtro-foranea" onclick="setFiltro('foranea')"
+        style="padding:8px 18px;border-radius:999px;border:2px solid #e5e7eb;background:#fff;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all 0.2s;">
+        🌎 Foráneas (<span id="count-foranea">0</span>)
+      </button>
+    </div>
+
     <!-- Buscador -->
     <div style="margin-bottom:20px;position:relative;max-width:420px;">
       <span class="material-symbols-outlined" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:20px;">search</span>
@@ -287,18 +303,49 @@
 
     // Datos completos para filtrar
     let todosLosTramites = [];
+    let filtroActivo = 'todos';
+
+    function esQR(curp) {
+      return curp && curp.substring(11, 13).toUpperCase() === 'QR';
+    }
+
+    function setFiltro(filtro) {
+      filtroActivo = filtro;
+      // Estilos de botones
+      ['todos', 'qr', 'foranea'].forEach(f => {
+        const btn = document.getElementById('filtro-' + f);
+        if (f === filtro) {
+          btn.style.background = '#0d631b';
+          btn.style.color = '#fff';
+          btn.style.borderColor = '#0d631b';
+        } else {
+          btn.style.background = '#fff';
+          btn.style.color = '#374151';
+          btn.style.borderColor = '#e5e7eb';
+        }
+      });
+      aplicarFiltros();
+    }
+
+    function aplicarFiltros() {
+      const q = document.getElementById('buscador').value.trim().toUpperCase();
+      let lista = todosLosTramites;
+      if (filtroActivo === 'qr')      lista = lista.filter(t => esQR(t.curp));
+      if (filtroActivo === 'foranea') lista = lista.filter(t => !esQR(t.curp));
+      if (q) lista = lista.filter(t => t.curp.includes(q));
+      renderCards(lista);
+    }
 
     function filtrarTramites() {
       const q = document.getElementById('buscador').value.trim().toUpperCase();
       document.getElementById('btn-limpiar').style.display = q ? 'block' : 'none';
-      const filtrados = q ? todosLosTramites.filter(t => t.curp.includes(q)) : todosLosTramites;
-      renderCards(filtrados);
+      aplicarFiltros();
     }
 
     function limpiarBusqueda() {
       document.getElementById('buscador').value = '';
       document.getElementById('btn-limpiar').style.display = 'none';
-      renderCards(todosLosTramites);
+      aplicarFiltros();
     }
 
     function renderCards(lista) {
@@ -336,10 +383,13 @@
         document.getElementById('stat-completadas').textContent = stats.actas_completadas ?? '—';
         document.getElementById('stat-generando').textContent   = data.filter(t => t.estado==='generando_acta').length;
         todosLosTramites = data;
-        // Mantener filtro activo si el admin estaba buscando
-        const q = document.getElementById('buscador').value.trim().toUpperCase();
-        const filtrados = q ? data.filter(t => t.curp.includes(q)) : data;
-        renderCards(filtrados);
+        // Actualizar contadores QR / Foráneas
+        const qrCount = data.filter(t => esQR(t.curp)).length;
+        const foraCount = data.length - qrCount;
+        document.getElementById('count-qr').textContent     = qrCount;
+        document.getElementById('count-foranea').textContent = foraCount;
+        // Mantener filtro activo
+        aplicarFiltros();
       } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
     }
 
