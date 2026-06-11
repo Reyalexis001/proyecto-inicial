@@ -11,6 +11,9 @@ const path     = require('path');
 const jwt      = require('jsonwebtoken');
 const { createClient }                  = require('@supabase/supabase-js');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
+const helmet    = require('helmet');
+const rateLimit = require('express-rate-limit');
+const crypto    = require('crypto');
 
 const app = express();
 
@@ -37,6 +40,42 @@ const mpClient = new MercadoPagoConfig({
 
 // ── Middleware global ─────────────────────────────────────────────────────
 app.use(cors());
+
+// ── 1. Helmet — headers de seguridad HTTP ────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false, // Desactivado para no romper el frontend
+  crossOriginEmbedderPolicy: false
+}));
+
+// ── 2. Rate Limiting ──────────────────────────────────────────────────────
+// Límite general: 100 peticiones por 15 minutos por IP
+const limiterGeneral = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
+});
+
+// Límite estricto para crear trámites: 10 por hora por IP
+const limiterTramite = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Límite de solicitudes alcanzado. Intenta de nuevo en una hora.' }
+});
+
+// Límite para login admin: 10 intentos por 15 minutos
+const limiterLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de acceso. Intenta de nuevo en 15 minutos.' }
+});
+
+app.use(limiterGeneral);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -54,7 +93,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date().toIS
  * POST /api/tramite
  * El usuario envía su CURP → se crea el trámite y se devuelve la URL de pago.
  */
-app.post('/api/tramite', async (req, res) => {
+app.post('/api/tramite', limiterTramite, async (req, res) => {
   try {
     const { curp } = req.body;
 
@@ -241,11 +280,36 @@ app.get('/api/tramite/id/:id', async (req, res) => {
  * MercadoPago llama aquí cuando cambia el estado de un pago.
  * IMPORTANTE: responder 200 inmediatamente, procesar después.
  */
-app.post('/api/webhook/mercadopago', async (req, res) => {
+app.post('/api/webhook/mercadopago', express.raw({ type: 'application/json' }), async (req, res) => {
+  // ── 3. Validar firma de MercadoPago ──────────────────────────────────
+  const secret    = process.env.MP_WEBHOOK_SECRET;
+  const xSignature = req.headers['x-signature'];
+  const xRequestId = req.headers['x-request-id'];
+
+  if (secret && xSignature && xRequestId) {
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body.toString() : JSON.stringify(req.body);
+      const parts = xSignature.split(',');
+      const ts  = parts.find(p => p.startsWith('ts='))?.split('=')[1];
+      const sig = parts.find(p => p.startsWith('v1='))?.split('=')[1];
+      const manifest = `id:${req.body?.data?.id};request-id:${xRequestId};ts:${ts};`;
+      const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+      if (sig !== expected) {
+        console.warn('[Webhook] Firma inválida — posible ataque');
+        return res.status(401).send('Unauthorized');
+      }
+    } catch (sigErr) {
+      console.warn('[Webhook] Error validando firma:', sigErr.message);
+    }
+  }
+
+  // Parsear body si viene como Buffer
+  const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
+
   res.status(200).send('OK'); // MP requiere respuesta rápida
 
   try {
-    const { type, data } = req.body;
+    const { type, data } = body;
     const paymentId = data?.id;
 
     if (type !== 'payment' || !paymentId) return;
@@ -331,7 +395,7 @@ function verifyAdmin(req, res, next) {
  * POST /api/admin/login
  * Autenticación del administrador. Devuelve JWT válido por 8 horas.
  */
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', limiterLogin, (req, res) => {
   const { email, password } = req.body;
 
   if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
