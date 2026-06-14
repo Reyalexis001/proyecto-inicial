@@ -165,6 +165,18 @@
     <p>© 2024 Gobierno de México — Sistema de Actas Mexicanas · Admin</p>
   </footer>
 
+  <!-- Globo de notificaciones -->
+  <div id="notif-bubble" style="display:none;position:fixed;bottom:28px;right:28px;z-index:200;">
+    <button onclick="suscribirNotificaciones();document.getElementById('notif-bubble').style.display='none';"
+      style="display:flex;align-items:center;gap:10px;background:#0d631b;color:#fff;border:none;border-radius:999px;padding:14px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 4px 20px rgba(13,99,27,0.4);transition:transform 0.2s;"
+      onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+      <span style="font-family:'Material Symbols Outlined';font-variation-settings:'FILL' 1;font-size:22px;">notifications</span>
+      🔔 Activar notificaciones de pedidos
+      <button onclick="event.stopPropagation();document.getElementById('notif-bubble').style.display='none';"
+        style="background:rgba(255,255,255,0.2);border:none;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:14px;line-height:1;padding:0;margin-left:4px;">✕</button>
+    </button>
+  </div>
+
   <script>
     const token = localStorage.getItem('admin_token');
     if (!token) window.location.href = '/admin/login.html';
@@ -457,14 +469,30 @@
       ultimoConteo = pendientes;
     }
 
-    // Activar notificaciones automáticamente si ya tiene permiso
+    // Detectar modo incógnito/privado antes de pedir permiso
+    async function esModoPrivado() {
+      try {
+        const fs = window.RequestFileSystem || window.webkitRequestFileSystem;
+        if (fs) {
+          return await new Promise(resolve => fs(window.TEMPORARY, 1, () => resolve(false), () => resolve(true)));
+        }
+        // Para navegadores modernos: intentar escribir en storage
+        await navigator.storage.estimate();
+        return false;
+      } catch { return true; }
+    }
+
+    // Activar notificaciones si ya tiene permiso, si no mostrar el globo
     if (Notification.permission === 'granted') {
       notifPermiso = true;
       document.getElementById('notif-label').textContent = 'Activas ✓';
       document.getElementById('btn-notif').style.background = '#dcfce7';
       document.getElementById('btn-notif').style.color = '#0d631b';
     } else if (Notification.permission === 'default') {
-      setTimeout(() => suscribirNotificaciones(), 1500);
+      // Mostrar globo flotante después de 2 segundos
+      setTimeout(() => {
+        document.getElementById('notif-bubble').style.display = 'block';
+      }, 2000);
     }
 
     loadTramites();
