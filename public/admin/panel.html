@@ -414,18 +414,18 @@
       return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
     }
 
-    async function suscribirNotificaciones() {
+    async function suscribirNotificaciones(silencioso = false) {
       const btn   = document.getElementById('btn-notif');
       const label = document.getElementById('notif-label');
 
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('Tu navegador no soporta notificaciones push.', 'error');
+        if (!silencioso) showToast('Tu navegador no soporta notificaciones push.', 'error');
         return;
       }
 
       const permiso = await Notification.requestPermission();
       if (permiso !== 'granted') {
-        showToast('Permiso de notificaciones denegado.', 'error');
+        if (!silencioso) showToast('Permiso de notificaciones denegado.', 'error');
         return;
       }
 
@@ -458,7 +458,7 @@
 
       } catch (err) {
         console.error('[Push]', err);
-        showToast('Error al activar notificaciones.', 'error');
+        if (!silencioso) showToast('Error al activar notificaciones.', 'error');
       }
     }
 
@@ -494,8 +494,8 @@
     if (Notification.permission === 'granted') {
       autoSuscribir();
     } else if (Notification.permission === 'default') {
-      // Pequeño delay para que el panel cargue primero
-      setTimeout(() => suscribirNotificaciones(), 1500);
+      // Intento silencioso — si el navegador lo bloquea, no muestra error
+      setTimeout(() => suscribirNotificaciones(true), 1500);
     }
   </script>
 </body>
