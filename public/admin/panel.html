@@ -165,16 +165,25 @@
     <p>© 2024 Gobierno de México — Sistema de Actas Mexicanas · Admin</p>
   </footer>
 
-  <!-- Globo de notificaciones -->
-  <div id="notif-bubble" style="display:none;position:fixed;bottom:28px;right:28px;z-index:200;">
-    <button onclick="suscribirNotificaciones();document.getElementById('notif-bubble').style.display='none';"
-      style="display:flex;align-items:center;gap:10px;background:#0d631b;color:#fff;border:none;border-radius:999px;padding:14px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 4px 20px rgba(13,99,27,0.4);transition:transform 0.2s;"
-      onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-      <span style="font-family:'Material Symbols Outlined';font-variation-settings:'FILL' 1;font-size:22px;">notifications</span>
-      🔔 Activar notificaciones de pedidos
-      <button onclick="event.stopPropagation();document.getElementById('notif-bubble').style.display='none';"
-        style="background:rgba(255,255,255,0.2);border:none;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:14px;line-height:1;padding:0;margin-left:4px;">✕</button>
-    </button>
+  <!-- Globo de notificaciones — aparece debajo del botón en el header -->
+  <div id="notif-bubble" style="display:none;position:fixed;top:72px;right:80px;z-index:200;">
+    <!-- Flechita apuntando arriba hacia el botón -->
+    <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #0d631b;margin-left:32px;"></div>
+    <div style="background:#0d631b;border-radius:14px;padding:14px 18px;box-shadow:0 8px 30px rgba(13,99,27,0.35);max-width:280px;">
+      <p style="color:#fff;font-size:13px;font-weight:600;margin:0 0 10px;line-height:1.5;">
+        👆 Da clic en <strong>"Notificaciones"</strong> para recibir avisos cuando llegue un pedido nuevo.
+      </p>
+      <div style="display:flex;gap:8px;">
+        <button onclick="suscribirNotificaciones();document.getElementById('notif-bubble').style.display='none';"
+          style="flex:1;background:#fff;color:#0d631b;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;">
+          ✓ Activar ahora
+        </button>
+        <button onclick="document.getElementById('notif-bubble').style.display='none';"
+          style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;">
+          Ahora no
+        </button>
+      </div>
+    </div>
   </div>
 
   <script>
