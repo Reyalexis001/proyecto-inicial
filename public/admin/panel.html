@@ -430,26 +430,29 @@
       }
 
       try {
-        // Obtener public key del servidor
-        const keyRes    = await fetch('/api/vapid-public-key');
-        const { publicKey } = await keyRes.json();
+        // 1. Obtener public key del servidor
+        const keyRes = await fetch('/api/vapid-public-key');
+        if (!keyRes.ok) throw new Error('No se pudo obtener la clave VAPID del servidor (status ' + keyRes.status + ')');
+        const keyData = await keyRes.json();
+        if (!keyData.publicKey) throw new Error('VAPID_PUBLIC_KEY no está configurada en el servidor');
 
-        // Registrar service worker
+        // 2. Registrar service worker
         const reg = await navigator.serviceWorker.register('/sw.js');
         await navigator.serviceWorker.ready;
 
-        // Suscribirse
+        // 3. Suscribirse
         const subscription = await reg.pushManager.subscribe({
           userVisibleOnly:      true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
+          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
         });
 
-        // Enviar suscripción al backend
-        await fetch('/api/admin/subscribe', {
+        // 4. Enviar suscripción al backend
+        const subRes = await fetch('/api/admin/subscribe', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
           body:    JSON.stringify(subscription)
         });
+        if (!subRes.ok) throw new Error('Error al guardar suscripción en el servidor');
 
         label.textContent = 'Activas ✓';
         btn.style.background = '#dcfce7';
@@ -457,8 +460,8 @@
         showToast('🔔 Notificaciones activadas correctamente');
 
       } catch (err) {
-        console.error('[Push]', err);
-        if (!silencioso) showToast('Error al activar notificaciones.', 'error');
+        console.error('[Push] Error detallado:', err.message);
+        if (!silencioso) showToast('Error: ' + err.message, 'error');
       }
     }
 
