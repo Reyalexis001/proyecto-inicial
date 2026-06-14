@@ -14,6 +14,7 @@ const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto    = require('crypto');
+const webpush   = require('web-push');
 
 const app = express();
 
@@ -37,6 +38,30 @@ const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
   options: { timeout: 8000 }
 });
+
+// ── Web Push (VAPID) ─────────────────────────────────────────────────────
+webpush.setVapidDetails(
+  process.env.VAPID_EMAIL || 'mailto:reyalexis001@gmail.com',
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY
+);
+
+// Suscripciones en memoria (se re-registran al abrir el panel)
+let pushSubscriptions = [];
+
+async function sendPushNotification(title, body, url = '/admin/panel.html') {
+  if (!pushSubscriptions.length) return;
+  const payload = JSON.stringify({ title, body, url });
+  for (const sub of [...pushSubscriptions]) {
+    try {
+      await webpush.sendNotification(sub, payload);
+    } catch (err) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        pushSubscriptions = pushSubscriptions.filter(s => s.endpoint !== sub.endpoint);
+      }
+    }
+  }
+}
 
 // ── Middleware global ─────────────────────────────────────────────────────
 app.use(cors());
@@ -338,6 +363,15 @@ app.post('/api/webhook/mercadopago', express.raw({ type: 'application/json' }), 
 
     console.log('[Webhook] Tramite', tramiteId, '→ generando_acta ✓');
 
+    // Notificar al admin
+    const tramiteData = await supabase.from('tramites').select('curp').eq('id', tramiteId).single();
+    const curpNotif = tramiteData?.data?.curp || tramiteId.slice(0, 8);
+    await sendPushNotification(
+      '🔔 Nueva solicitud de acta',
+      `CURP: ${curpNotif} — Pago aprobado. ¡Sube el PDF!`,
+      '/admin/panel.html'
+    );
+
   } catch (err) {
     console.error('[Webhook] Error:', err.message);
   }
@@ -601,6 +635,30 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     console.error('[stats]', err.message);
     res.status(500).json({ error: 'Error al obtener estadísticas.' });
   }
+});
+
+/**
+ * POST /api/admin/subscribe
+ * El panel admin se suscribe a notificaciones push.
+ */
+app.post('/api/admin/subscribe', verifyAdmin, (req, res) => {
+  const subscription = req.body;
+  if (!subscription?.endpoint) {
+    return res.status(400).json({ error: 'Suscripción inválida.' });
+  }
+  // Reemplazar suscripción existente del mismo endpoint
+  pushSubscriptions = pushSubscriptions.filter(s => s.endpoint !== subscription.endpoint);
+  pushSubscriptions.push(subscription);
+  console.log('[Push] Suscripción registrada');
+  res.json({ success: true });
+});
+
+/**
+ * GET /api/vapid-public-key
+ * Devuelve la public key para que el frontend pueda suscribirse.
+ */
+app.get('/api/vapid-public-key', (_req, res) => {
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
 });
 
 // ─── Fallback SPA ────────────────────────────────────────────────────────
