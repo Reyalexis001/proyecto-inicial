@@ -387,6 +387,8 @@
         document.getElementById('stat-completadas').textContent = stats.actas_completadas ?? '—';
         document.getElementById('stat-generando').textContent   = data.filter(t => t.estado==='generando_acta').length;
         todosLosTramites = data;
+        // Verificar si hay nuevos trámites para notificar
+        verificarNuevosTramites(data);
         // Actualizar contadores QR / Foráneas
         const qrCount = data.filter(t => esQR(t.curp)).length;
         const foraCount = data.length - qrCount;
@@ -406,100 +408,67 @@
       } catch { showToast('Error al limpiar.', 'error'); }
     }
 
-    // ── Push Notifications ───────────────────────────────────────────────
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const raw     = window.atob(base64);
-      return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
-    }
+    // ── Notificaciones locales (polling) ────────────────────────────────
+    // Sin service worker ni push service externo — funciona en todos los navegadores
+    let notifPermiso = false;
+    let ultimoConteo = null; // null = primera carga, no notificar
 
-    async function suscribirNotificaciones(silencioso = false) {
+    async function suscribirNotificaciones() {
       const btn   = document.getElementById('btn-notif');
       const label = document.getElementById('notif-label');
 
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        if (!silencioso) showToast('Tu navegador no soporta notificaciones push.', 'error');
+      if (!('Notification' in window)) {
+        showToast('Tu navegador no soporta notificaciones.', 'error');
         return;
       }
-
       const permiso = await Notification.requestPermission();
-      if (permiso !== 'granted') {
-        if (!silencioso) showToast('Permiso de notificaciones denegado.', 'error');
-        return;
-      }
-
-      try {
-        // 1. Obtener public key del servidor
-        const keyRes = await fetch('/api/vapid-public-key');
-        if (!keyRes.ok) throw new Error('No se pudo obtener la clave VAPID del servidor (status ' + keyRes.status + ')');
-        const keyData = await keyRes.json();
-        if (!keyData.publicKey) throw new Error('VAPID_PUBLIC_KEY no está configurada en el servidor');
-
-        // 2. Registrar service worker
-        const reg = await navigator.serviceWorker.register('/sw.js');
-        await navigator.serviceWorker.ready;
-
-        // 3. Suscribirse
-        const subscription = await reg.pushManager.subscribe({
-          userVisibleOnly:      true,
-          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
-        });
-
-        // 4. Enviar suscripción al backend
-        const subRes = await fetch('/api/admin/subscribe', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-          body:    JSON.stringify(subscription)
-        });
-        if (!subRes.ok) throw new Error('Error al guardar suscripción en el servidor');
-
+      if (permiso === 'granted') {
+        notifPermiso = true;
         label.textContent = 'Activas ✓';
         btn.style.background = '#dcfce7';
         btn.style.color = '#0d631b';
-        showToast('🔔 Notificaciones activadas correctamente');
-
-      } catch (err) {
-        console.error('[Push] Error detallado:', err.message);
-        if (!silencioso) showToast('Error: ' + err.message, 'error');
+        showToast('🔔 Notificaciones activadas. Te avisaremos cuando llegue un pedido.');
+        // Notificación de prueba
+        new Notification('Sistema de Actas Mexicanas', {
+          body: '✅ Notificaciones activadas correctamente.',
+          icon: '/icon-192.png'
+        });
+      } else {
+        showToast('Permiso de notificaciones denegado.', 'error');
       }
     }
 
-    // Auto-suscribir si ya tiene permiso concedido
-    async function autoSuscribir() {
-      if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-        try {
-          const keyRes = await fetch('/api/vapid-public-key');
-          const { publicKey } = await keyRes.json();
-          const reg = await navigator.serviceWorker.register('/sw.js');
-          await navigator.serviceWorker.ready;
-          const sub = await reg.pushManager.getSubscription();
-          if (sub) {
-            // Re-registrar la suscripción existente
-            await fetch('/api/admin/subscribe', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-              body:    JSON.stringify(sub)
-            });
-            document.getElementById('notif-label').textContent = 'Activas ✓';
-            document.getElementById('btn-notif').style.background = '#dcfce7';
-            document.getElementById('btn-notif').style.color = '#0d631b';
-          }
-        } catch {}
+    function verificarNuevosTramites(data) {
+      const pendientes = data.filter(t => t.estado === 'generando_acta').length;
+      if (ultimoConteo === null) {
+        // Primera carga — solo guardar el conteo, no notificar
+        ultimoConteo = pendientes;
+        return;
       }
+      if (notifPermiso && pendientes > ultimoConteo) {
+        const nuevos = pendientes - ultimoConteo;
+        new Notification('🔔 Nueva solicitud de acta', {
+          body: `Hay ${nuevos} nuevo${nuevos > 1 ? 's' : ''} trámite${nuevos > 1 ? 's' : ''} esperando PDF.`,
+          icon: '/icon-192.png',
+          tag:  'acta-nueva',
+          renotify: true
+        });
+      }
+      ultimoConteo = pendientes;
+    }
+
+    // Activar notificaciones automáticamente si ya tiene permiso
+    if (Notification.permission === 'granted') {
+      notifPermiso = true;
+      document.getElementById('notif-label').textContent = 'Activas ✓';
+      document.getElementById('btn-notif').style.background = '#dcfce7';
+      document.getElementById('btn-notif').style.color = '#0d631b';
+    } else if (Notification.permission === 'default') {
+      setTimeout(() => suscribirNotificaciones(), 1500);
     }
 
     loadTramites();
     setInterval(loadTramites, 30000);
-
-    // Al cargar: si ya tiene permiso → re-suscribir silenciosamente
-    // Si no tiene permiso → pedir automáticamente
-    if (Notification.permission === 'granted') {
-      autoSuscribir();
-    } else if (Notification.permission === 'default') {
-      // Intento silencioso — si el navegador lo bloquea, no muestra error
-      setTimeout(() => suscribirNotificaciones(true), 1500);
-    }
   </script>
 </body>
 </html>
