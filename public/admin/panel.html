@@ -487,8 +487,16 @@
     }
 
     loadTramites();
-    autoSuscribir();
     setInterval(loadTramites, 30000);
+
+    // Al cargar: si ya tiene permiso → re-suscribir silenciosamente
+    // Si no tiene permiso → pedir automáticamente
+    if (Notification.permission === 'granted') {
+      autoSuscribir();
+    } else if (Notification.permission === 'default') {
+      // Pequeño delay para que el panel cargue primero
+      setTimeout(() => suscribirNotificaciones(), 1500);
+    }
   </script>
 </body>
 </html>
