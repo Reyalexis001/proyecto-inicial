@@ -73,10 +73,10 @@ app.use(helmet({
 }));
 
 // ── 2. Rate Limiting ──────────────────────────────────────────────────────
-// Límite general: 100 peticiones por 15 minutos por IP
+// Límite general: 300 peticiones por 15 minutos por IP
 const limiterGeneral = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
@@ -100,7 +100,11 @@ const limiterLogin = rateLimit({
   message: { error: 'Demasiados intentos de acceso. Intenta de nuevo en 15 minutos.' }
 });
 
-app.use(limiterGeneral);
+// Rate limiter general — excluir webhook de MercadoPago
+app.use((req, res, next) => {
+  if (req.path === '/api/webhook/mercadopago') return next();
+  return limiterGeneral(req, res, next);
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -305,22 +309,21 @@ app.get('/api/tramite/id/:id', async (req, res) => {
  * MercadoPago llama aquí cuando cambia el estado de un pago.
  * IMPORTANTE: responder 200 inmediatamente, procesar después.
  */
-app.post('/api/webhook/mercadopago', express.raw({ type: 'application/json' }), async (req, res) => {
-  // ── 3. Validar firma de MercadoPago ──────────────────────────────────
-  const secret    = process.env.MP_WEBHOOK_SECRET;
+app.post('/api/webhook/mercadopago', async (req, res) => {
+  // Validar firma de MercadoPago
   const xSignature = req.headers['x-signature'];
   const xRequestId = req.headers['x-request-id'];
+  const secret     = process.env.MP_WEBHOOK_SECRET;
 
   if (secret && xSignature && xRequestId) {
     try {
-      const body = Buffer.isBuffer(req.body) ? req.body.toString() : JSON.stringify(req.body);
       const parts = xSignature.split(',');
       const ts  = parts.find(p => p.startsWith('ts='))?.split('=')[1];
       const sig = parts.find(p => p.startsWith('v1='))?.split('=')[1];
       const manifest = `id:${req.body?.data?.id};request-id:${xRequestId};ts:${ts};`;
       const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
-      if (sig !== expected) {
-        console.warn('[Webhook] Firma inválida — posible ataque');
+      if (sig && sig !== expected) {
+        console.warn('[Webhook] Firma inválida');
         return res.status(401).send('Unauthorized');
       }
     } catch (sigErr) {
@@ -328,13 +331,10 @@ app.post('/api/webhook/mercadopago', express.raw({ type: 'application/json' }), 
     }
   }
 
-  // Parsear body si viene como Buffer
-  const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
-
-  res.status(200).send('OK'); // MP requiere respuesta rápida
+  res.status(200).send('OK'); // Responder inmediatamente a MP
 
   try {
-    const { type, data } = body;
+    const { type, data } = req.body;
     const paymentId = data?.id;
 
     if (type !== 'payment' || !paymentId) return;
