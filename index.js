@@ -8,50 +8,34 @@ const express  = require('express');
 const cors     = require('cors');
 const multer   = require('multer');
 const path     = require('path');
+const fs       = require('fs');
 const jwt      = require('jsonwebtoken');
-const { createClient }                  = require('@supabase/supabase-js');
+const crypto   = require('crypto');
+const { createClient }                   = require('@supabase/supabase-js');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
-const crypto    = require('crypto');
-const webpush   = require('web-push');
 
-const app = express();
-
-// ── Storage en memoria para uploads (se sube directo a Supabase) ──────────
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB máx
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
-    else cb(new Error('Solo se permiten archivos PDF'));
-  }
-});
-
-// ── Clientes externos ─────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE
-);
-
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN,
-  options: { timeout: 8000 }
-});
-
-// ── Web Push (VAPID) ─────────────────────────────────────────────────────
-webpush.setVapidDetails(
-  process.env.VAPID_EMAIL || 'mailto:reyalexis001@gmail.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
-
-// Suscripciones en memoria (se re-registran al abrir el panel)
+// Web-push opcional (solo si están configuradas las VAPID keys)
+let webpush = null;
 let pushSubscriptions = [];
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  try {
+    webpush = require('web-push');
+    webpush.setVapidDetails(
+      process.env.VAPID_EMAIL || 'mailto:reyalexis001@gmail.com',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+    console.log('✅ Web Push configurado');
+  } catch (e) {
+    console.warn('⚠️  Web Push no disponible:', e.message);
+  }
+}
 
-async function sendPushNotification(title, body, url = '/admin/panel.html') {
-  if (!pushSubscriptions.length) return;
-  const payload = JSON.stringify({ title, body, url });
+async function sendPushNotification(title, body) {
+  if (!webpush || !pushSubscriptions.length) return;
+  const payload = JSON.stringify({ title, body, url: '/admin/panel.html' });
   for (const sub of [...pushSubscriptions]) {
     try {
       await webpush.sendNotification(sub, payload);
@@ -63,26 +47,59 @@ async function sendPushNotification(title, body, url = '/admin/panel.html') {
   }
 }
 
-// ── Middleware global ─────────────────────────────────────────────────────
-app.use(cors());
+const app = express();
 
-// ── 1. Helmet — headers de seguridad HTTP ────────────────────────────────
+// ── CRÍTICO: trust proxy para que el rate limiter use la IP real del usuario ──
+// Sin esto, todos los usuarios parecen la misma IP y se bloquean entre sí
+app.set('trust proxy', 1);
+
+// ── Clientes externos ─────────────────────────────────────────────────────
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE,
+  { auth: { persistSession: false } }
+);
+
+const mpClient = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+  options: { timeout: 10000 }
+});
+
+// ── Upload de PDFs en memoria ─────────────────────────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Solo se permiten archivos PDF'));
+  }
+});
+
+// ── Middleware global ─────────────────────────────────────────────────────
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-cleanup-secret']
+}));
+
 app.use(helmet({
-  contentSecurityPolicy: false, // Desactivado para no romper el frontend
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
-// ── 2. Rate Limiting ──────────────────────────────────────────────────────
-// Límite general: 300 peticiones por 15 minutos por IP
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────
 const limiterGeneral = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/api/webhook/mercadopago' || req.path === '/health',
   message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
 });
 
-// Límite estricto para crear trámites: 10 por hora por IP
 const limiterTramite = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
@@ -91,7 +108,6 @@ const limiterTramite = rateLimit({
   message: { error: 'Límite de solicitudes alcanzado. Intenta de nuevo en una hora.' }
 });
 
-// Límite para login admin: 10 intentos por 15 minutos
 const limiterLogin = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -100,36 +116,30 @@ const limiterLogin = rateLimit({
   message: { error: 'Demasiados intentos de acceso. Intenta de nuevo en 15 minutos.' }
 });
 
-// Rate limiter general — excluir webhook de MercadoPago
-app.use((req, res, next) => {
-  if (req.path === '/api/webhook/mercadopago') return next();
-  return limiterGeneral(req, res, next);
-});
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(limiterGeneral);
 
-// Servir el frontend estático desde /public
-app.use(express.static(path.join(__dirname, 'public')));
+// ── Frontend estático ─────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  etag: true
+}));
 
-// ── Health check (Render lo usa para verificar el servicio) ───────────────
+// ── Health check ──────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
 // ═════════════════════════════════════════════════════════════════════════
 //  RUTAS PÚBLICAS — Trámites
 // ═════════════════════════════════════════════════════════════════════════
 
-/**
- * POST /api/tramite
- * El usuario envía su CURP → se crea el trámite y se devuelve la URL de pago.
- */
+const PRECIO_MXN = 10; // Precio único en todo el sistema
+
 app.post('/api/tramite', limiterTramite, async (req, res) => {
   try {
     const { curp } = req.body;
 
-    // Validación básica de CURP (18 caracteres, formato RMAT)
     const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z\d]\d$/i;
     if (!curp || !curpRegex.test(curp.trim())) {
-      return res.status(400).json({ error: 'CURP inválido. Verifica que sean 18 caracteres con el formato correcto.' });
+      return res.status(400).json({ error: 'CURP inválido. Verifica el formato (18 caracteres).' });
     }
 
     const curpUpper = curp.toUpperCase().trim();
@@ -145,13 +155,13 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
       .maybeSingle();
 
     if (existing) {
-      // Si está pendiente de pago, generar nueva preferencia para reintentar
       if (existing.estado === 'pendiente_pago') {
+        // Reintentar pago
         try {
-          const preference = new Preference(mpClient);
-          const mpPref = await preference.create({
+          const pref = new Preference(mpClient);
+          const mpPref = await pref.create({
             body: {
-              items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: 10, currency_id: 'MXN' }],
+              items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
               metadata: { tramite_id: existing.id, curp: curpUpper },
               external_reference: existing.id,
               back_urls: {
@@ -163,28 +173,23 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
             }
           });
           const isSandbox = process.env.MP_SANDBOX === 'true';
-          const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
           return res.json({
             tramite_id: existing.id,
-            redirect_url: checkoutUrl,
-            existing: true,
-            retry: true,
-            message: 'Redirigiendo al pago...'
+            redirect_url: isSandbox ? mpPref.sandbox_init_point : mpPref.init_point,
+            existing: true, retry: true
           });
         } catch (mpErr) {
           console.error('[Retry MP]', mpErr.message);
         }
       }
-      // Para otros estados, solo devolver el trámite activo
       return res.json({
         tramite_id: existing.id,
         redirect_url: null,
-        existing: true,
-        message: 'Ya tienes un trámite activo para este CURP. Puedes consultar su estado.'
+        existing: true
       });
     }
 
-    // Crear registro en la base de datos
+    // Crear nuevo trámite
     const { data: tramite, error: insertError } = await supabase
       .from('tramites')
       .insert({ curp: curpUpper, estado: 'pendiente_pago' })
@@ -193,20 +198,12 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
 
     if (insertError) throw insertError;
 
-    // Crear preferencia — misma estructura del proyecto anterior que funcionaba
-    const preference = new Preference(mpClient);
-    const mpPref = await preference.create({
+    // Crear preferencia en MercadoPago
+    const pref = new Preference(mpClient);
+    const mpPref = await pref.create({
       body: {
-        items: [{
-          title:       'Acta de Nacimiento Digital',
-          quantity:    1,
-          unit_price:  5,
-          currency_id: 'MXN'
-        }],
-        metadata: {
-          tramite_id: tramite.id,
-          curp:       curpUpper
-        },
+        items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
+        metadata: { tramite_id: tramite.id, curp: curpUpper },
         external_reference: tramite.id,
         back_urls: {
           success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
@@ -216,46 +213,24 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
         notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
       }
     });
-    // Log completo de la respuesta de MP para debug
-    console.log('[MP] Preferencia completa:', JSON.stringify({
-      id:                  mpPref.id,
-      init_point:          mpPref.init_point,
-      sandbox_init_point:  mpPref.sandbox_init_point,
-      collector_id:        mpPref.collector_id,
-      client_id:           mpPref.client_id,
-    }, null, 2));
 
-    // Guardar el preference_id en el trámite
-    await supabase
-      .from('tramites')
-      .update({ preference_id: mpPref.id })
-      .eq('id', tramite.id);
+    await supabase.from('tramites').update({ preference_id: mpPref.id }).eq('id', tramite.id);
 
-    // Siempre usar init_point de producción (MP_SANDBOX=false)
-    // Nunca mezclar sandbox_init_point con credenciales de producción
-    const checkoutUrl = mpPref.init_point;
-    console.log('[MP] Usando init_point producción:', checkoutUrl);
+    const isSandbox = process.env.MP_SANDBOX === 'true';
+    const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
+    console.log(`[MP] Preferencia ${mpPref.id} → ${checkoutUrl}`);
 
-    res.json({
-      tramite_id:  tramite.id,
-      redirect_url: checkoutUrl,
-      existing:    false
-    });
+    res.json({ tramite_id: tramite.id, redirect_url: checkoutUrl, existing: false });
 
   } catch (err) {
-    console.error('[POST /api/tramite] FULL ERROR:', err);
+    console.error('[POST /api/tramite]', err.message);
     res.status(500).json({ error: 'Error al crear el trámite. Intenta de nuevo.' });
   }
 });
 
-/**
- * GET /api/tramite/curp/:curp
- * Consultar el estado de un trámite por CURP (desde la página de inicio).
- */
 app.get('/api/tramite/curp/:curp', async (req, res) => {
   try {
     const curp = req.params.curp.toUpperCase().trim();
-
     const { data: tramites, error } = await supabase
       .from('tramites')
       .select('id, curp, estado, created_at, acta_url')
@@ -263,23 +238,14 @@ app.get('/api/tramite/curp/:curp', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-
-    if (!tramites || tramites.length === 0) {
-      return res.json({ found: false, tramites: [] });
-    }
-
+    if (!tramites?.length) return res.json({ found: false, tramites: [] });
     res.json({ found: true, tramites });
-
   } catch (err) {
-    console.error('[GET tramite/curp] FULL ERROR:', err);
+    console.error('[GET tramite/curp]', err.message);
     res.status(500).json({ error: 'Error al consultar trámites.' });
   }
 });
 
-/**
- * GET /api/tramite/id/:id
- * Consultar el estado de un trámite por su ID (desde la página de seguimiento).
- */
 app.get('/api/tramite/id/:id', async (req, res) => {
   try {
     const { data: tramite, error } = await supabase
@@ -288,38 +254,29 @@ app.get('/api/tramite/id/:id', async (req, res) => {
       .eq('id', req.params.id)
       .single();
 
-    if (error || !tramite) {
-      return res.status(404).json({ error: 'Trámite no encontrado.' });
-    }
-
+    if (error || !tramite) return res.status(404).json({ error: 'Trámite no encontrado.' });
     res.json(tramite);
-
   } catch (err) {
-    console.error('[GET tramite/id] FULL ERROR:', err);
+    console.error('[GET tramite/id]', err.message);
     res.status(500).json({ error: 'Error al consultar trámite.' });
   }
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-//  WEBHOOK — MercadoPago
+//  WEBHOOK — MercadoPago (sin rate limiting)
 // ═════════════════════════════════════════════════════════════════════════
 
-/**
- * POST /api/webhook/mercadopago
- * MercadoPago llama aquí cuando cambia el estado de un pago.
- * IMPORTANTE: responder 200 inmediatamente, procesar después.
- */
 app.post('/api/webhook/mercadopago', async (req, res) => {
-  // Validar firma de MercadoPago
+  // Validar firma si está configurada
   const xSignature = req.headers['x-signature'];
   const xRequestId = req.headers['x-request-id'];
   const secret     = process.env.MP_WEBHOOK_SECRET;
 
   if (secret && xSignature && xRequestId) {
     try {
-      const parts = xSignature.split(',');
-      const ts  = parts.find(p => p.startsWith('ts='))?.split('=')[1];
-      const sig = parts.find(p => p.startsWith('v1='))?.split('=')[1];
+      const parts   = xSignature.split(',');
+      const ts      = parts.find(p => p.startsWith('ts='))?.split('=')[1];
+      const sig     = parts.find(p => p.startsWith('v1='))?.split('=')[1];
       const manifest = `id:${req.body?.data?.id};request-id:${xRequestId};ts:${ts};`;
       const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
       if (sig && sig !== expected) {
@@ -331,92 +288,63 @@ app.post('/api/webhook/mercadopago', async (req, res) => {
     }
   }
 
-  res.status(200).send('OK'); // Responder inmediatamente a MP
+  res.status(200).send('OK'); // Responder rápido a MP
 
   try {
     const { type, data } = req.body;
     const paymentId = data?.id;
-
     if (type !== 'payment' || !paymentId) return;
 
     const payment     = new Payment(mpClient);
     const paymentData = await payment.get({ id: paymentId });
 
-    console.log('[Webhook] Pago recibido:', paymentData.id, '| Status:', paymentData.status);
+    console.log(`[Webhook] Pago ${paymentData.id} | Status: ${paymentData.status}`);
 
-    // Solo procesar pagos aprobados (igual que proyecto anterior)
     if (paymentData.status !== 'approved') return;
 
-    // Buscar tramite por external_reference o por metadata.tramite_id
-    const tramiteId = paymentData.external_reference
-      || paymentData.metadata?.tramite_id;
-
-    if (!tramiteId) {
-      console.log('[Webhook] Sin tramite_id en el pago');
-      return;
-    }
+    const tramiteId = paymentData.external_reference || paymentData.metadata?.tramite_id;
+    if (!tramiteId) { console.warn('[Webhook] Sin tramite_id'); return; }
 
     await supabase
       .from('tramites')
       .update({ estado: 'generando_acta', payment_id: String(paymentData.id) })
       .eq('id', tramiteId);
 
-    console.log('[Webhook] Tramite', tramiteId, '→ generando_acta ✓');
+    console.log(`[Webhook] Tramite ${tramiteId} → generando_acta ✓`);
 
-    // Notificar al admin
-    const tramiteData = await supabase.from('tramites').select('curp').eq('id', tramiteId).single();
-    const curpNotif = tramiteData?.data?.curp || tramiteId.slice(0, 8);
-    await sendPushNotification(
-      '🔔 Nueva solicitud de acta',
-      `CURP: ${curpNotif} — Pago aprobado. ¡Sube el PDF!`,
-      '/admin/panel.html'
-    );
+    // Notificación push al admin
+    const { data: t } = await supabase.from('tramites').select('curp').eq('id', tramiteId).single();
+    await sendPushNotification('🔔 Nueva solicitud', `CURP: ${t?.curp} — ¡Sube el PDF!`);
 
   } catch (err) {
     console.error('[Webhook] Error:', err.message);
   }
 });
 
-/**
- * GET /api/webhook/mercadopago
- * Algunas versiones de MP usan GET con ?topic=payment&id=...
- */
 app.get('/api/webhook/mercadopago', async (req, res) => {
   res.status(200).send('OK');
-
   const { topic, id } = req.query;
   if (topic !== 'payment' || !id) return;
-
   try {
     const payment     = new Payment(mpClient);
     const paymentData = await payment.get({ id });
     const tramiteId   = paymentData.external_reference;
-    if (!tramiteId) return;
-
-    let newEstado = 'pendiente_pago';
-    if (paymentData.status === 'approved') newEstado = 'generando_acta';
-    else if (['pending', 'in_process', 'authorized'].includes(paymentData.status)) newEstado = 'procesando_pago';
-
-    await supabase
-      .from('tramites')
-      .update({ estado: newEstado, payment_id: String(paymentData.id) })
+    if (!tramiteId || paymentData.status !== 'approved') return;
+    await supabase.from('tramites')
+      .update({ estado: 'generando_acta', payment_id: String(paymentData.id) })
       .eq('id', tramiteId);
-
   } catch (err) {
-    console.error('[Webhook GET] Error:', err.message);
+    console.error('[Webhook GET]', err.message);
   }
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-//  RUTAS ADMIN (protegidas con JWT)
+//  ADMIN (protegido con JWT)
 // ═════════════════════════════════════════════════════════════════════════
 
-/** Middleware de autenticación admin */
 function verifyAdmin(req, res, next) {
   const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Sin autorización.' });
-  }
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Sin autorización.' });
   try {
     req.admin = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
     next();
@@ -425,30 +353,16 @@ function verifyAdmin(req, res, next) {
   }
 }
 
-/**
- * POST /api/admin/login
- * Autenticación del administrador. Devuelve JWT válido por 8 horas.
- */
 app.post('/api/admin/login', limiterLogin, (req, res) => {
   const { email, password } = req.body;
-
   if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-    const token = jwt.sign(
-      { role: 'admin', email },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
+    const token = jwt.sign({ role: 'admin', email }, process.env.JWT_SECRET, { expiresIn: '8h' });
     res.json({ token });
   } else {
-    // Mismo mensaje para no revelar qué campo es incorrecto
     res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
   }
 });
 
-/**
- * GET /api/admin/tramites
- * Lista de trámites pendientes (generando_acta y procesando_pago).
- */
 app.get('/api/admin/tramites', verifyAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -456,98 +370,77 @@ app.get('/api/admin/tramites', verifyAdmin, async (req, res) => {
       .select('*')
       .in('estado', ['generando_acta', 'procesando_pago'])
       .order('created_at', { ascending: false });
-
     if (error) throw error;
-
     res.json(data || []);
-
   } catch (err) {
-    console.error('[GET admin/tramites] FULL ERROR:', err);
+    console.error('[GET admin/tramites]', err.message);
     res.status(500).json({ error: 'Error al cargar trámites.' });
   }
 });
 
-/**
- * POST /api/admin/tramites/:id/upload
- * El admin sube el PDF del acta. Se guarda en Supabase Storage.
- */
+app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
+  try {
+    // Usar COUNT por estado en vez de traer todos los registros
+    const estados = ['acta_lista', 'generando_acta', 'procesando_pago', 'pendiente_pago', 'acta_no_encontrada'];
+    const counts = await Promise.all(estados.map(estado =>
+      supabase.from('tramites').select('id', { count: 'exact', head: true }).eq('estado', estado)
+    ));
+    res.json({
+      actas_completadas: counts[0].count || 0,
+      generando:         counts[1].count || 0,
+      procesando:        counts[2].count || 0,
+      pendiente:         counts[3].count || 0,
+      no_encontradas:    counts[4].count || 0,
+    });
+  } catch (err) {
+    console.error('[stats]', err.message);
+    res.status(500).json({ error: 'Error al obtener estadísticas.' });
+  }
+});
+
 app.post('/api/admin/tramites/:id/upload', verifyAdmin, upload.single('pdf'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo.' });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se subió ningún archivo.' });
-    }
+    const { data: tramite } = await supabase.from('tramites').select('id').eq('id', id).single();
+    if (!tramite) return res.status(404).json({ error: 'Trámite no encontrado.' });
 
-    // Verificar que el trámite existe
-    const { data: tramite } = await supabase
-      .from('tramites')
-      .select('id, estado')
-      .eq('id', id)
-      .single();
-
-    if (!tramite) {
-      return res.status(404).json({ error: 'Trámite no encontrado.' });
-    }
-
-    // Subir PDF a Supabase Storage (bucket: "actas")
     const filePath = `actas/${id}.pdf`;
-
     const { error: uploadError } = await supabase.storage
-      .from('actas')
-      .upload(filePath, req.file.buffer, {
-        contentType: 'application/pdf',
-        upsert: true      // Sobreescribir si ya existe
-      });
-
+      .from('actas').upload(filePath, req.file.buffer, { contentType: 'application/pdf', upsert: true });
     if (uploadError) throw uploadError;
 
-    // Obtener URL pública del archivo
-    const { data: { publicUrl } } = supabase.storage
-      .from('actas')
-      .getPublicUrl(filePath);
-
-    // Actualizar estado del trámite
-    const { error: updateError } = await supabase
-      .from('tramites')
-      .update({ estado: 'acta_lista', acta_url: publicUrl })
-      .eq('id', id);
-
+    const { data: { publicUrl } } = supabase.storage.from('actas').getPublicUrl(filePath);
+    const { error: updateError } = await supabase.from('tramites')
+      .update({ estado: 'acta_lista', acta_url: publicUrl }).eq('id', id);
     if (updateError) throw updateError;
 
-    console.log(`[Upload] Acta subida para trámite ${id}`);
+    console.log(`[Upload] Acta subida: ${id}`);
     res.json({ success: true, acta_url: publicUrl });
-
   } catch (err) {
-    console.error('[POST /api/admin/upload]', err.message);
+    console.error('[Upload]', err.message);
     res.status(500).json({ error: 'Error al subir el acta. Intenta de nuevo.' });
   }
 });
 
-
-/**
- * POST /api/admin/tramites/:id/no-encontrada
- */
 app.post('/api/admin/tramites/:id/no-encontrada', verifyAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { error } = await supabase.from('tramites').update({ estado: 'acta_no_encontrada' }).eq('id', id);
+    const { error } = await supabase.from('tramites')
+      .update({ estado: 'acta_no_encontrada' }).eq('id', req.params.id);
     if (error) throw error;
-    console.log(`[Admin] Tramite ${id} -> acta_no_encontrada`);
     res.json({ success: true });
   } catch (err) {
     console.error('[no-encontrada]', err.message);
-    res.status(500).json({ error: 'Error al actualizar el tramite.' });
+    res.status(500).json({ error: 'Error al actualizar el trámite.' });
   }
 });
 
-/**
- * POST /api/admin/cleanup — Elimina PDFs con mas de 24h
- */
 app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
   try {
     const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: viejos } = await supabase.from('tramites').select('id').eq('estado','acta_lista').lt('updated_at', hace24h).not('acta_url','is',null);
+    const { data: viejos } = await supabase.from('tramites').select('id')
+      .eq('estado', 'acta_lista').lt('updated_at', hace24h).not('acta_url', 'is', null);
     let eliminados = 0;
     for (const t of viejos || []) {
       const { error } = await supabase.storage.from('actas').remove([`actas/${t.id}.pdf`]);
@@ -559,51 +452,40 @@ app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
   }
 });
 
+app.post('/api/admin/subscribe', verifyAdmin, (req, res) => {
+  const subscription = req.body;
+  if (!subscription?.endpoint) return res.status(400).json({ error: 'Suscripción inválida.' });
+  pushSubscriptions = pushSubscriptions.filter(s => s.endpoint !== subscription.endpoint);
+  pushSubscriptions.push(subscription);
+  res.json({ success: true });
+});
 
-/**
- * GET /api/cleanup-auto
- * Llamado automáticamente por cron-job.org cada 24h.
- * Protegido con CLEANUP_SECRET en el header.
- */
+app.get('/api/vapid-public-key', (_req, res) => {
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || null });
+});
+
+// ── Cleanup automático (cron-job.org) ────────────────────────────────────
 app.get('/api/cleanup-auto', async (req, res) => {
-  const secret = req.headers['x-cleanup-secret'];
-  if (secret !== process.env.CLEANUP_SECRET) {
+  if (req.headers['x-cleanup-secret'] !== process.env.CLEANUP_SECRET) {
     return res.status(401).json({ error: 'No autorizado.' });
   }
   try {
     const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    // 1. Borrar PDFs de Storage para actas listas con +24h
-    const { data: viejos } = await supabase
-      .from('tramites')
-      .select('id')
-      .eq('estado', 'acta_lista')
-      .lt('updated_at', hace24h)
-      .not('acta_url', 'is', null);
+    const { data: viejos } = await supabase.from('tramites').select('id')
+      .eq('estado', 'acta_lista').lt('updated_at', hace24h).not('acta_url', 'is', null);
 
     let eliminados = 0;
     for (const t of viejos || []) {
-      const { error } = await supabase.storage
-        .from('actas')
-        .remove([`actas/${t.id}.pdf`]);
-      if (!error) {
-        await supabase.from('tramites')
-          .update({ acta_url: null })
-          .eq('id', t.id);
-        eliminados++;
-      }
+      const { error } = await supabase.storage.from('actas').remove([`actas/${t.id}.pdf`]);
+      if (!error) { await supabase.from('tramites').update({ acta_url: null }).eq('id', t.id); eliminados++; }
     }
 
-    // 2. Borrar registros completos con +24h en estado final o pendiente_pago
-    const { data: deleted } = await supabase
-      .from('tramites')
-      .delete()
+    const { data: deleted } = await supabase.from('tramites').delete()
       .in('estado', ['acta_lista', 'acta_no_encontrada', 'pendiente_pago'])
-      .lt('updated_at', hace24h)
-      .select('id');
+      .lt('updated_at', hace24h).select('id');
 
     const registrosBorrados = deleted?.length || 0;
-    console.log(`[Cleanup Auto] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
+    console.log(`[Cleanup] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
     res.json({ success: true, eliminados, registrosBorrados, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[Cleanup Auto]', err.message);
@@ -611,86 +493,53 @@ app.get('/api/cleanup-auto', async (req, res) => {
   }
 });
 
-
-/**
- * GET /api/admin/stats
- * Estadísticas generales para el panel admin.
- */
-app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('tramites')
-      .select('estado');
-    if (error) throw error;
-    const stats = {
-      actas_completadas: data.filter(t => t.estado === 'acta_lista').length,
-      generando:         data.filter(t => t.estado === 'generando_acta').length,
-      procesando:        data.filter(t => t.estado === 'procesando_pago').length,
-      pendiente:         data.filter(t => t.estado === 'pendiente_pago').length,
-      no_encontradas:    data.filter(t => t.estado === 'acta_no_encontrada').length,
-      total:             data.length,
-    };
-    res.json(stats);
-  } catch (err) {
-    console.error('[stats]', err.message);
-    res.status(500).json({ error: 'Error al obtener estadísticas.' });
-  }
-});
-
-/**
- * POST /api/admin/subscribe
- * El panel admin se suscribe a notificaciones push.
- */
-app.post('/api/admin/subscribe', verifyAdmin, (req, res) => {
-  const subscription = req.body;
-  if (!subscription?.endpoint) {
-    return res.status(400).json({ error: 'Suscripción inválida.' });
-  }
-  // Reemplazar suscripción existente del mismo endpoint
-  pushSubscriptions = pushSubscriptions.filter(s => s.endpoint !== subscription.endpoint);
-  pushSubscriptions.push(subscription);
-  console.log('[Push] Suscripción registrada');
-  res.json({ success: true });
-});
-
-/**
- * GET /api/vapid-public-key
- * Devuelve la public key para que el frontend pueda suscribirse.
- */
-app.get('/api/vapid-public-key', (_req, res) => {
-  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
-});
-
-// ─── Fallback SPA ────────────────────────────────────────────────────────
+// ── Fallback SPA ──────────────────────────────────────────────────────────
+const indexPath = path.join(__dirname, 'public', 'index.html');
 app.get('*', (_req, res) => {
-  const fs = require('fs');
-  const indexPath = path.join(__dirname, 'public', 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).json({ status: 'ok', message: 'API corriendo.' });
+    res.status(200).json({ status: 'ok' });
   }
+});
+
+// ── Manejo global de errores ──────────────────────────────────────────────
+app.use((err, _req, res, _next) => {
+  console.error('[Error global]', err.message);
+  res.status(500).json({ error: 'Error interno del servidor.' });
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
 });
 
 // ── Arrancar servidor ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`✅ Servidor iniciado en puerto ${PORT}`);
-  console.log(`   Supabase URL:  ${process.env.SUPABASE_URL}`);
-  console.log(`   Service Role:  ${process.env.SUPABASE_SERVICE_ROLE ? '✓ definido (' + process.env.SUPABASE_SERVICE_ROLE.slice(0,20) + '...)' : '✗ VACÍO'}`);
-  console.log(`   MP Token:      ${process.env.MP_ACCESS_TOKEN      ? '✓ definido' : '✗ VACÍO'}`);
-  console.log(`   Modo sandbox:  ${process.env.MP_SANDBOX === 'true' ? 'SÍ' : 'NO'}`);
+  console.log(`   Supabase:  ${process.env.SUPABASE_URL}`);
+  console.log(`   MP Token:  ${process.env.MP_ACCESS_TOKEN ? '✓' : '✗ VACÍO'}`);
+  console.log(`   Sandbox:   ${process.env.MP_SANDBOX === 'true' ? 'SÍ' : 'NO'}`);
+  console.log(`   Precio:    $${PRECIO_MXN} MXN`);
 
-  // Prueba de conectividad con Supabase al arrancar
   try {
     const { error } = await supabase.from('tramites').select('id').limit(1);
-    if (error) {
-      console.error('⚠️  Supabase ERROR:', error.message, error.code);
-    } else {
-      console.log('✅ Supabase conectado correctamente');
-    }
+    if (error) console.error('⚠️  Supabase ERROR:', error.message);
+    else console.log('✅ Supabase conectado');
   } catch (e) {
     console.error('❌ Supabase FETCH FAILED:', e.message);
-    console.error('   Verifica SUPABASE_URL y SUPABASE_SERVICE_ROLE en Render.');
   }
+});
+
+// Cierre limpio cuando Render hace deploy (envía SIGTERM)
+process.on('SIGTERM', () => {
+  console.log('SIGTERM recibido — cerrando servidor...');
+  server.close(() => {
+    console.log('Servidor cerrado correctamente');
+    process.exit(0);
+  });
 });
