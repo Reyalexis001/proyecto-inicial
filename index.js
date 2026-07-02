@@ -13,8 +13,10 @@ const jwt      = require('jsonwebtoken');
 const crypto   = require('crypto');
 const { createClient }                   = require('@supabase/supabase-js');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
-const helmet    = require('helmet');
-const rateLimit = require('express-rate-limit');
+const helmet      = require('helmet');
+const rateLimit   = require('express-rate-limit');
+const compression = require('compression');
+const slowDown    = require('express-slow-down');
 
 // Web-push opcional (solo si están configuradas las VAPID keys)
 let webpush = null;
@@ -53,16 +55,38 @@ const app = express();
 // Sin esto, todos los usuarios parecen la misma IP y se bloquean entre sí
 app.set('trust proxy', 1);
 
+// ── Compresión GZIP — reduce hasta 70% el tamaño de respuestas ──────────
+app.use(compression({
+  level: 6,
+  threshold: 1024, // solo comprimir respuestas > 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
+
 // ── Clientes externos ─────────────────────────────────────────────────────
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE,
-  { auth: { persistSession: false } }
+  {
+    auth: { persistSession: false },
+    db:   { schema: 'public' },
+    global: {
+      headers: { 'x-app': 'sistema-actas-mexicanas' },
+      fetch: (url, opts = {}) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000); // timeout 8s
+        return fetch(url, { ...opts, signal: controller.signal })
+          .finally(() => clearTimeout(timer));
+      }
+    }
+  }
 );
 
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
-  options: { timeout: 10000 }
+  options: { timeout: 12000, idempotencyKey: undefined }
 });
 
 // ── Upload de PDFs en memoria ─────────────────────────────────────────────
@@ -100,6 +124,17 @@ const limiterGeneral = rateLimit({
   message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
 });
 
+// Slow-down: en vez de bloquear, empieza a ralentizar respuestas
+// después de 50 peticiones → añade 200ms por cada petición extra
+// Así el servidor no se satura pero tampoco bloquea al usuario legítimo
+const speedLimiter = slowDown({
+  windowMs: 15 * 60 * 1000,
+  delayAfter: 50,
+  delayMs: (used) => (used - 50) * 200, // 200ms, 400ms, 600ms...
+  maxDelayMs: 5000,                      // máximo 5 segundos de delay
+  skip: (req) => req.path === '/api/webhook/mercadopago' || req.path === '/health'
+});
+
 const limiterTramite = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
@@ -117,6 +152,7 @@ const limiterLogin = rateLimit({
 });
 
 app.use(limiterGeneral);
+app.use(speedLimiter);
 
 // ── Frontend estático ─────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -535,6 +571,11 @@ const server = app.listen(PORT, async () => {
   }
 });
 
+// Timeout de servidor — evita conexiones colgadas a 500 usuarios
+server.timeout         = 30000; // 30s máximo por request
+server.keepAliveTimeout = 65000; // mayor que el de Render (60s)
+server.headersTimeout  = 66000;
+
 // Cierre limpio cuando Render hace deploy (envía SIGTERM)
 process.on('SIGTERM', () => {
   console.log('SIGTERM recibido — cerrando servidor...');
@@ -542,4 +583,6 @@ process.on('SIGTERM', () => {
     console.log('Servidor cerrado correctamente');
     process.exit(0);
   });
+  // Forzar cierre después de 15s si no termina solo
+  setTimeout(() => process.exit(0), 15000);
 });
