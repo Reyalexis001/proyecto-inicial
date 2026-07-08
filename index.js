@@ -120,7 +120,7 @@ const limiterGeneral = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/webhook/mercadopago' || req.path === '/health',
+  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto'].includes(req.path),
   message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
 });
 
@@ -132,7 +132,7 @@ const speedLimiter = slowDown({
   delayAfter: 50,
   delayMs: (used) => (used - 50) * 200, // 200ms, 400ms, 600ms...
   maxDelayMs: 5000,                      // máximo 5 segundos de delay
-  skip: (req) => req.path === '/api/webhook/mercadopago' || req.path === '/health'
+  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto'].includes(req.path)
 });
 
 const limiterTramite = rateLimit({
