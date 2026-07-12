@@ -474,16 +474,33 @@ app.post('/api/admin/tramites/:id/no-encontrada', verifyAdmin, async (req, res) 
 
 app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
   try {
-    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: viejos } = await supabase.from('tramites').select('id')
-      .eq('estado', 'acta_lista').lt('updated_at', hace24h).not('acta_url', 'is', null);
+    // 1. Borrar PDFs huérfanos directamente desde Storage (sin depender de la tabla)
+    const { data: archivos, error: listError } = await supabase.storage
+      .from('actas')
+      .list('actas', { limit: 1000 });
+
+    if (listError) throw listError;
+
     let eliminados = 0;
-    for (const t of viejos || []) {
-      const { error } = await supabase.storage.from('actas').remove([`actas/${t.id}.pdf`]);
-      if (!error) { await supabase.from('tramites').update({ acta_url: null }).eq('id', t.id); eliminados++; }
+
+    if (archivos && archivos.length > 0) {
+      const paths = archivos.map(f => `actas/${f.name}`);
+      const { error: removeError } = await supabase.storage
+        .from('actas')
+        .remove(paths);
+      if (!removeError) eliminados = paths.length;
     }
+
+    // 2. Limpiar URLs en la tabla también
+    await supabase.from('tramites')
+      .update({ acta_url: null })
+      .not('acta_url', 'is', null);
+
+    console.log(`[Cleanup Manual] ${eliminados} PDFs eliminados de Storage`);
     res.json({ success: true, eliminados });
+
   } catch (err) {
+    console.error('[Cleanup Manual]', err.message);
     res.status(500).json({ error: 'Error en limpieza.' });
   }
 });
@@ -507,21 +524,30 @@ app.get('/api/cleanup-auto', async (req, res) => {
   }
   try {
     const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: viejos } = await supabase.from('tramites').select('id')
-      .eq('estado', 'acta_lista').lt('updated_at', hace24h).not('acta_url', 'is', null);
+
+    // 1. Listar todos los PDFs en Storage y borrarlos
+    const { data: archivos } = await supabase.storage
+      .from('actas').list('actas', { limit: 1000 });
 
     let eliminados = 0;
-    for (const t of viejos || []) {
-      const { error } = await supabase.storage.from('actas').remove([`actas/${t.id}.pdf`]);
-      if (!error) { await supabase.from('tramites').update({ acta_url: null }).eq('id', t.id); eliminados++; }
+    if (archivos && archivos.length > 0) {
+      const paths = archivos.map(f => `actas/${f.name}`);
+      const { error } = await supabase.storage.from('actas').remove(paths);
+      if (!error) eliminados = paths.length;
     }
 
+    // 2. Borrar registros viejos de la tabla
     const { data: deleted } = await supabase.from('tramites').delete()
       .in('estado', ['acta_lista', 'acta_no_encontrada', 'pendiente_pago'])
       .lt('updated_at', hace24h).select('id');
 
+    // 3. Limpiar URLs huérfanas
+    await supabase.from('tramites')
+      .update({ acta_url: null })
+      .not('acta_url', 'is', null);
+
     const registrosBorrados = deleted?.length || 0;
-    console.log(`[Cleanup] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
+    console.log(`[Cleanup Auto] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
     res.json({ success: true, eliminados, registrosBorrados, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[Cleanup Auto]', err.message);
