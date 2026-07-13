@@ -151,6 +151,17 @@ const limiterLogin = rateLimit({
   message: { error: 'Demasiados intentos de acceso. Intenta de nuevo en 15 minutos.' }
 });
 
+// Límite para consultar estado: 150 por 15 min por IP
+// (el polling de seguimiento.html es cada 20s = ~45/15min, dejamos margen amplio
+// para redes compartidas donde varias personas comparten la misma IP pública)
+const limiterConsulta = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas. Espera unos minutos.' }
+});
+
 app.use(limiterGeneral);
 app.use(speedLimiter);
 
@@ -264,7 +275,7 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
   }
 });
 
-app.get('/api/tramite/curp/:curp', async (req, res) => {
+app.get('/api/tramite/curp/:curp', limiterConsulta, async (req, res) => {
   try {
     const curp = req.params.curp.toUpperCase().trim();
     const { data: tramites, error } = await supabase
@@ -282,8 +293,13 @@ app.get('/api/tramite/curp/:curp', async (req, res) => {
   }
 });
 
-app.get('/api/tramite/id/:id', async (req, res) => {
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+app.get('/api/tramite/id/:id', limiterConsulta, async (req, res) => {
   try {
+    if (!UUID_REGEX.test(req.params.id)) {
+      return res.status(400).json({ error: 'ID inválido.' });
+    }
     const { data: tramite, error } = await supabase
       .from('tramites')
       .select('id, curp, estado, created_at, acta_url')
@@ -382,17 +398,42 @@ function verifyAdmin(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Sin autorización.' });
   try {
-    req.admin = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+    req.admin = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET, {
+      issuer: 'sistema-actas-mexicanas'
+    });
     next();
   } catch {
     res.status(401).json({ error: 'Sesión expirada. Inicia sesión de nuevo.' });
   }
 }
 
+// Comparación de tiempo constante — evita timing attacks
+function compararSeguro(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    // Igual comparamos algo para no filtrar la longitud por tiempo
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 app.post('/api/admin/login', limiterLogin, (req, res) => {
-  const { email, password } = req.body;
-  if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-    const token = jwt.sign({ role: 'admin', email }, process.env.JWT_SECRET, { expiresIn: '8h' });
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Correo y contraseña son requeridos.' });
+  }
+
+  const emailOk    = compararSeguro(email, process.env.ADMIN_EMAIL || '');
+  const passwordOk = compararSeguro(password, process.env.ADMIN_PASSWORD || '');
+
+  if (emailOk && passwordOk) {
+    const token = jwt.sign(
+      { role: 'admin', email },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h', issuer: 'sistema-actas-mexicanas' }
+    );
     res.json({ token });
   } else {
     res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
@@ -472,38 +513,8 @@ app.post('/api/admin/tramites/:id/no-encontrada', verifyAdmin, async (req, res) 
   }
 });
 
-app.post('/api/admin/cleanup', verifyAdmin, async (req, res) => {
-  try {
-    // 1. Borrar PDFs huérfanos directamente desde Storage (sin depender de la tabla)
-    const { data: archivos, error: listError } = await supabase.storage
-      .from('actas')
-      .list('actas', { limit: 1000 });
-
-    if (listError) throw listError;
-
-    let eliminados = 0;
-
-    if (archivos && archivos.length > 0) {
-      const paths = archivos.map(f => `actas/${f.name}`);
-      const { error: removeError } = await supabase.storage
-        .from('actas')
-        .remove(paths);
-      if (!removeError) eliminados = paths.length;
-    }
-
-    // 2. Limpiar URLs en la tabla también
-    await supabase.from('tramites')
-      .update({ acta_url: null })
-      .not('acta_url', 'is', null);
-
-    console.log(`[Cleanup Manual] ${eliminados} PDFs eliminados de Storage`);
-    res.json({ success: true, eliminados });
-
-  } catch (err) {
-    console.error('[Cleanup Manual]', err.message);
-    res.status(500).json({ error: 'Error en limpieza.' });
-  }
-});
+// Nota: la limpieza manual desde el panel fue removida.
+// El cronjob automático (/api/cleanup-auto) se encarga de esto cada 24h.
 
 app.post('/api/admin/subscribe', verifyAdmin, (req, res) => {
   const subscription = req.body;
@@ -523,31 +534,42 @@ app.get('/api/cleanup-auto', async (req, res) => {
     return res.status(401).json({ error: 'No autorizado.' });
   }
   try {
-    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // 1. Listar todos los PDFs en Storage y borrarlos
+    // 1. Listar PDFs en Storage y borrar SOLO los que tienen +24h
     const { data: archivos } = await supabase.storage
       .from('actas').list('actas', { limit: 1000 });
 
     let eliminados = 0;
     if (archivos && archivos.length > 0) {
-      const paths = archivos.map(f => `actas/${f.name}`);
-      const { error } = await supabase.storage.from('actas').remove(paths);
-      if (!error) eliminados = paths.length;
+      const paths = archivos
+        .filter(f => f.created_at && new Date(f.created_at) < hace24h)
+        .map(f => `actas/${f.name}`);
+
+      if (paths.length > 0) {
+        const { error } = await supabase.storage.from('actas').remove(paths);
+        if (!error) eliminados = paths.length;
+      }
     }
 
-    // 2. Borrar registros viejos de la tabla
+    // 2. Borrar registros viejos de la tabla (+24h)
     const { data: deleted } = await supabase.from('tramites').delete()
       .in('estado', ['acta_lista', 'acta_no_encontrada', 'pendiente_pago'])
-      .lt('updated_at', hace24h).select('id');
+      .lt('updated_at', hace24h.toISOString()).select('id');
 
-    // 3. Limpiar URLs huérfanas
-    await supabase.from('tramites')
-      .update({ acta_url: null })
+    // 3. Limpiar URLs huérfanas (registros que ya no tienen PDF pero conservan la URL)
+    const { data: huerfanos } = await supabase.from('tramites')
+      .select('id, acta_url')
+      .eq('estado', 'acta_lista')
+      .lt('updated_at', hace24h.toISOString())
       .not('acta_url', 'is', null);
+    if (huerfanos?.length) {
+      const ids = huerfanos.map(h => h.id);
+      await supabase.from('tramites').update({ acta_url: null }).in('id', ids);
+    }
 
     const registrosBorrados = deleted?.length || 0;
-    console.log(`[Cleanup Auto] ${eliminados} PDFs + ${registrosBorrados} registros eliminados`);
+    console.log(`[Cleanup Auto] ${eliminados} PDFs (+24h) + ${registrosBorrados} registros eliminados`);
     res.json({ success: true, eliminados, registrosBorrados, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[Cleanup Auto]', err.message);
