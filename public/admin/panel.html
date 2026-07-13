@@ -70,10 +70,7 @@
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
-      <button class="cleanup-btn" onclick="doCleanup()">
-        <span class="material-symbols-outlined" style="font-size:16px;">auto_delete</span>
-        Limpiar PDFs +24h
-      </button>
+
       <button id="btn-notif" onclick="suscribirNotificaciones()" class="cleanup-btn" title="Activar notificaciones">
         <span class="material-symbols-outlined" style="font-size:16px;">notifications</span>
         <span id="notif-label">Notificaciones</span>
@@ -272,30 +269,18 @@
       if (!grid.children.length) { grid.style.display = 'none'; document.getElementById('empty-state').style.display = 'block'; }
     }
 
-    function escapeHtml(value) {
-      return String(value ?? '').replace(/[&<>"']/g, ch => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      }[ch]));
-    }
-
     function createCard(t) {
-      const safeId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(t.id || '') ? t.id : '';
-      const safeCurp = escapeHtml(t.curp);
       const badge = t.estado === 'generando_acta'
         ? '<span class="badge badge-blue"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;"></span>Requiere PDF</span>'
         : '<span class="badge badge-yellow"><span style="width:6px;height:6px;background:#d97706;border-radius:50%;display:inline-block;"></span>Procesando pago</span>';
       const canUpload = t.estado === 'generando_acta';
 
       return `
-        <div class="card" id="card-${safeId}">
+        <div class="card" id="card-${t.id}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div>
               <div class="field-label">CURP</div>
-              <div class="mono">${safeCurp}</div>
+              <div class="mono">${t.curp}</div>
             </div>
             ${badge}
           </div>
@@ -312,20 +297,20 @@
           </div>
           ${canUpload ? `
           <hr class="divider">
-          <div class="drop-zone" id="dropzone-${safeId}" onclick="document.getElementById('file-${safeId}').click()"
+          <div class="drop-zone" id="dropzone-${t.id}" onclick="document.getElementById('file-${t.id}').click()"
             ondragover="event.preventDefault();this.classList.add('dragover')"
             ondragleave="this.classList.remove('dragover')"
-            ondrop="handleDrop(event,'${safeId}')">
+            ondrop="handleDrop(event,'${t.id}')">
             <span class="material-symbols-outlined" style="color:#9ca3af;font-size:28px;margin-bottom:6px;display:block;font-variation-settings:'FILL' 1;">upload_file</span>
             <div style="font-size:12px;color:#9ca3af;font-weight:600;">Arrastra el PDF o haz clic</div>
           </div>
-          <p id="filename-${safeId}" style="font-size:11px;color:#6b7280;text-align:center;display:none;"></p>
-          <input type="file" accept="application/pdf" id="file-${safeId}" style="display:none;" onchange="onFileSelected('${safeId}')">
-          <button class="btn btn-green" id="upload-btn-${safeId}" onclick="uploadPDF('${safeId}')" disabled>
+          <p id="filename-${t.id}" style="font-size:11px;color:#6b7280;text-align:center;display:none;"></p>
+          <input type="file" accept="application/pdf" id="file-${t.id}" style="display:none;" onchange="onFileSelected('${t.id}')">
+          <button class="btn btn-green" id="upload-btn-${t.id}" onclick="uploadPDF('${t.id}')" disabled>
             <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1;">cloud_upload</span>
             Subir PDF del Acta
           </button>
-          <button class="btn btn-red" id="noencontrada-btn-${safeId}" onclick="marcarNoEncontrada('${safeId}')">
+          <button class="btn btn-red" id="noencontrada-btn-${t.id}" onclick="marcarNoEncontrada('${t.id}')">
             <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1;">search_off</span>
             Acta No Encontrada
           </button>
@@ -430,15 +415,6 @@
         // Mantener filtro activo
         aplicarFiltros();
       } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
-    }
-
-    async function doCleanup() {
-      try {
-        const res  = await fetch('/api/admin/cleanup', { method:'POST', headers:{ Authorization:'Bearer '+token } });
-        const data = await res.json();
-        if (data.success) showToast(`🗑️ ${data.eliminados} PDFs eliminados correctamente`);
-        else showToast('Error en limpieza.', 'error');
-      } catch { showToast('Error al limpiar.', 'error'); }
     }
 
     // ── Notificaciones locales (polling) ────────────────────────────────
