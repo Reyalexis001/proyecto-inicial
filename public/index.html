@@ -94,7 +94,7 @@
 
       <!-- Subtítulo -->
       <p style="font-size:17px;color:rgba(255,255,255,0.75);max-width:480px;margin:0 auto;line-height:1.7;">
-        Obtén tu acta certificada de forma rápida, segura y completamente digital. Respaldado por el Gobierno de México.
+        Obtén tu acta certificada de forma rápida, segura y completamente digital. Respaldado por el Gobierno de México. (Sistema disponible de 10 AM a 10 PM)
       </p>
 
     </div>
@@ -260,8 +260,9 @@
       const errEl = document.getElementById('err-consulta');
       const btn   = document.getElementById('btn-consulta');
 
-      if (curp.length < 10) {
-        errEl.textContent = 'Ingresa tu CURP completo.';
+      const re = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z\d]\d$/;
+      if (!re.test(curp)) {
+        errEl.textContent = 'CURP invÃ¡lido. Verifica que tenga 18 caracteres con el formato correcto.';
         errEl.style.display = 'block';
         return;
       }

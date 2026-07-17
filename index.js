@@ -49,6 +49,50 @@ async function sendPushNotification(title, body) {
   }
 }
 
+// ── Cola de concurrencia para llamadas a MercadoPago ─────────────────────
+// Evita saturar la API de MP y el servidor cuando llegan muchas solicitudes
+// al mismo tiempo (ej. 500 personas en el mismo segundo). En vez de disparar
+// todas las llamadas a la vez, procesa un máximo de N en paralelo y el resto
+// espera en fila unos milisegundos — sin que el usuario vea ningún error.
+class ColaConcurrencia {
+  constructor(maxConcurrente = 15) {
+    this.maxConcurrente = maxConcurrente;
+    this.enEjecucion = 0;
+    this.fila = [];
+  }
+  async ejecutar(tarea) {
+    if (this.enEjecucion >= this.maxConcurrente) {
+      await new Promise(resolve => this.fila.push(resolve));
+    }
+    this.enEjecucion++;
+    try {
+      return await tarea();
+    } finally {
+      this.enEjecucion--;
+      const siguiente = this.fila.shift();
+      if (siguiente) siguiente();
+    }
+  }
+}
+const colaMercadoPago = new ColaConcurrencia(15);
+
+// Reintento con backoff exponencial — si MP o Supabase fallan momentáneamente
+// por la carga, reintenta en vez de fallar de inmediato al usuario
+async function conReintento(fn, intentos = 3, delayBase = 300) {
+  let ultimoError;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      ultimoError = err;
+      if (i < intentos - 1) {
+        await new Promise(r => setTimeout(r, delayBase * Math.pow(2, i)));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
 const app = express();
 
 // ── CRÍTICO: trust proxy para que el rate limiter use la IP real del usuario ──
@@ -120,7 +164,7 @@ const limiterGeneral = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto'].includes(req.path),
+  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto', '/api/reconciliar-pagos'].includes(req.path),
   message: { error: 'Demasiadas peticiones. Intenta de nuevo en 15 minutos.' }
 });
 
@@ -132,7 +176,7 @@ const speedLimiter = slowDown({
   delayAfter: 50,
   delayMs: (used) => (used - 50) * 200, // 200ms, 400ms, 600ms...
   maxDelayMs: 5000,                      // máximo 5 segundos de delay
-  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto'].includes(req.path)
+  skip: (req) => ['/api/webhook/mercadopago', '/health', '/api/cleanup-auto', '/api/reconciliar-pagos'].includes(req.path)
 });
 
 const limiterTramite = rateLimit({
@@ -203,22 +247,26 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
 
     if (existing) {
       if (existing.estado === 'pendiente_pago') {
-        // Reintentar pago
+        // Reintentar pago — usando cola de concurrencia + reintentos
         try {
-          const pref = new Preference(mpClient);
-          const mpPref = await pref.create({
-            body: {
-              items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
-              metadata: { tramite_id: existing.id, curp: curpUpper },
-              external_reference: existing.id,
-              back_urls: {
-                success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`,
-                failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`
-              },
-              auto_return: 'approved',
-              notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
-            }
-          });
+          const mpPref = await colaMercadoPago.ejecutar(() =>
+            conReintento(async () => {
+              const pref = new Preference(mpClient);
+              return pref.create({
+                body: {
+                  items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
+                  metadata: { tramite_id: existing.id, curp: curpUpper },
+                  external_reference: existing.id,
+                  back_urls: {
+                    success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`,
+                    failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${existing.id}`
+                  },
+                  auto_return: 'approved',
+                  notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
+                }
+              });
+            })
+          );
           const isSandbox = process.env.MP_SANDBOX === 'true';
           return res.json({
             tramite_id: existing.id,
@@ -245,23 +293,30 @@ app.post('/api/tramite', limiterTramite, async (req, res) => {
 
     if (insertError) throw insertError;
 
-    // Crear preferencia en MercadoPago
-    const pref = new Preference(mpClient);
-    const mpPref = await pref.create({
-      body: {
-        items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
-        metadata: { tramite_id: tramite.id, curp: curpUpper },
-        external_reference: tramite.id,
-        back_urls: {
-          success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
-          failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`
-        },
-        auto_return: 'approved',
-        notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
-      }
-    });
+    // Crear preferencia en MercadoPago — con cola de concurrencia + reintentos
+    // para que 500 solicitudes simultáneas no saturen la API de MP ni el servidor
+    const mpPref = await colaMercadoPago.ejecutar(() =>
+      conReintento(async () => {
+        const pref = new Preference(mpClient);
+        return pref.create({
+          body: {
+            items: [{ title: 'Acta de Nacimiento Digital', quantity: 1, unit_price: PRECIO_MXN, currency_id: 'MXN' }],
+            metadata: { tramite_id: tramite.id, curp: curpUpper },
+            external_reference: tramite.id,
+            back_urls: {
+              success: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`,
+              failure: `${process.env.FRONTEND_URL}/seguimiento.html?id=${tramite.id}`
+            },
+            auto_return: 'approved',
+            notification_url: `${process.env.BACKEND_URL}/api/webhook/mercadopago`
+          }
+        });
+      })
+    );
 
-    await supabase.from('tramites').update({ preference_id: mpPref.id }).eq('id', tramite.id);
+    await conReintento(() =>
+      supabase.from('tramites').update({ preference_id: mpPref.id }).eq('id', tramite.id)
+    );
 
     const isSandbox = process.env.MP_SANDBOX === 'true';
     const checkoutUrl = isSandbox ? mpPref.sandbox_init_point : mpPref.init_point;
@@ -574,6 +629,70 @@ app.get('/api/cleanup-auto', async (req, res) => {
   } catch (err) {
     console.error('[Cleanup Auto]', err.message);
     res.status(500).json({ error: 'Error en limpieza.' });
+  }
+});
+
+/**
+ * GET /api/reconciliar-pagos
+ * Red de seguridad: revisa trámites atorados en pendiente_pago/procesando_pago
+ * con más de 10 minutos y consulta directamente a MercadoPago si el pago
+ * ya fue aprobado, por si el webhook nunca llegó (caída de red, etc).
+ * Protegido con el mismo CLEANUP_SECRET. Debe llamarse cada 10-15 min via cron-job.org.
+ */
+app.get('/api/reconciliar-pagos', async (req, res) => {
+  if (req.headers['x-cleanup-secret'] !== process.env.CLEANUP_SECRET) {
+    return res.status(401).json({ error: 'No autorizado.' });
+  }
+  try {
+    const hace10min = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+    const { data: pendientes, error } = await supabase
+      .from('tramites')
+      .select('id, curp, created_at')
+      .in('estado', ['pendiente_pago', 'procesando_pago'])
+      .lt('created_at', hace10min);
+
+    if (error) throw error;
+
+    let actualizados = 0;
+    const detalles = [];
+
+    for (const t of pendientes || []) {
+      try {
+        const resp = await fetch(
+          `https://api.mercadopago.com/v1/payments/search?external_reference=${t.id}`,
+          { headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` } }
+        );
+        if (!resp.ok) continue;
+
+        const data = await resp.json();
+        const aprobado = data.results?.find(p => p.status === 'approved');
+
+        if (aprobado) {
+          await supabase.from('tramites')
+            .update({ estado: 'generando_acta', payment_id: String(aprobado.id) })
+            .eq('id', t.id);
+          actualizados++;
+          detalles.push(t.curp);
+          console.log(`[Reconciliar] Trámite ${t.id} (${t.curp}) → generando_acta (pago encontrado manualmente)`);
+          await sendPushNotification('🔔 Pago reconciliado', `CURP: ${t.curp} — Pago aprobado (recuperado automáticamente)`);
+        }
+      } catch (innerErr) {
+        console.error('[Reconciliar]', t.id, innerErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      revisados: pendientes?.length || 0,
+      actualizados,
+      curps_actualizados: detalles,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    console.error('[Reconciliar Pagos]', err.message);
+    res.status(500).json({ error: 'Error en reconciliación.' });
   }
 });
 
