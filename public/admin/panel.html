@@ -326,6 +326,7 @@
     // Datos completos para filtrar
     let todosLosTramites = [];
     let filtroActivo = 'todos';
+    let ultimoHash = null; // para detectar si realmente cambió algo
 
     function esQR(curp) {
       return curp && curp.substring(11, 13).toUpperCase() === 'QR';
@@ -404,16 +405,25 @@
         document.getElementById('loading-state').style.display  = 'none';
         document.getElementById('stat-completadas').textContent = stats.actas_completadas ?? '—';
         document.getElementById('stat-generando').textContent   = data.filter(t => t.estado==='generando_acta').length;
+        // Comparar si los datos realmente cambiaron para evitar parpadeo innecesario
+        const nuevoHash = JSON.stringify(data.map(t => t.id + t.estado));
+        const huboCambios = nuevoHash !== ultimoHash;
+        ultimoHash = nuevoHash;
+
         todosLosTramites = data;
-        // Verificar si hay nuevos trámites para notificar
         verificarNuevosTramites(data);
-        // Actualizar contadores QR / Foráneas
+
+        // Contadores siempre se actualizan (son ligeros, no causan parpadeo visual)
         const qrCount = data.filter(t => esQR(t.curp)).length;
         const foraCount = data.length - qrCount;
         document.getElementById('count-qr').textContent     = qrCount;
         document.getElementById('count-foranea').textContent = foraCount;
-        // Mantener filtro activo
-        aplicarFiltros();
+
+        // Solo re-renderizar las tarjetas si realmente hubo un cambio
+        // (evita el parpadeo de recargar la lista cada 30s sin necesidad)
+        if (huboCambios) {
+          aplicarFiltros();
+        }
       } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
     }
 
