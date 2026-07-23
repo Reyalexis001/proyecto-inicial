@@ -75,7 +75,7 @@
         <span class="material-symbols-outlined" style="font-size:16px;">notifications</span>
         <span id="notif-label">Notificaciones</span>
       </button>
-      <button onclick="loadTramites()" class="cleanup-btn">
+      <button onclick="loadTramites(true)" class="cleanup-btn">
         <span class="material-symbols-outlined" style="font-size:16px;">refresh</span>
         Actualizar
       </button>
@@ -390,10 +390,15 @@
       grid.style.display = 'grid';
     }
 
-    async function loadTramites() {
-      document.getElementById('loading-state').style.display = 'block';
-      document.getElementById('empty-state').style.display   = 'none';
-      document.getElementById('cards-grid').style.display    = 'none';
+    async function loadTramites(esPrimeraVez = false) {
+      // Solo mostrar el loader y ocultar todo en la PRIMERA carga.
+      // En refrescos automáticos (cada 30s) no tocamos el estado visual
+      // hasta saber si realmente hay cambios — así no desaparece nada.
+      if (esPrimeraVez) {
+        document.getElementById('loading-state').style.display = 'block';
+        document.getElementById('empty-state').style.display   = 'none';
+        document.getElementById('cards-grid').style.display    = 'none';
+      }
       try {
         const [res, statsRes] = await Promise.all([
           fetch('/api/admin/tramites', { headers:{ Authorization:'Bearer '+token } }),
@@ -419,12 +424,14 @@
         document.getElementById('count-qr').textContent     = qrCount;
         document.getElementById('count-foranea').textContent = foraCount;
 
-        // Solo re-renderizar las tarjetas si realmente hubo un cambio
-        // (evita el parpadeo de recargar la lista cada 30s sin necesidad)
-        if (huboCambios) {
+        // Re-renderizar si hubo cambios O si es la primera carga (para mostrar el estado inicial)
+        if (huboCambios || esPrimeraVez) {
           aplicarFiltros();
         }
-      } catch { showToast('Error al cargar solicitudes.', 'error'); document.getElementById('loading-state').style.display = 'none'; }
+      } catch {
+        showToast('Error al cargar solicitudes.', 'error');
+        document.getElementById('loading-state').style.display = 'none';
+      }
     }
 
     // ── Notificaciones locales (polling) ────────────────────────────────
@@ -502,7 +509,7 @@
       }, 2000);
     }
 
-    loadTramites();
+    loadTramites(true); // primera carga — sí muestra el loader
     setInterval(loadTramites, 30000);
   </script>
 </body>
