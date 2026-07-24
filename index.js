@@ -25,7 +25,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   try {
     webpush = require('web-push');
     webpush.setVapidDetails(
-      process.env.VAPID_EMAIL || 'mailto:reyalexis001@gmail.com',
+      process.env.VAPID_EMAIL || 'mailto:actasmexicanasdevolucion@gmail.com',
       process.env.VAPID_PUBLIC_KEY,
       process.env.VAPID_PRIVATE_KEY
     );
