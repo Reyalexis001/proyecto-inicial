@@ -10,31 +10,41 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap"></noscript>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-    body { background: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; }
+    body { background: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
     .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; line-height: 1; display: inline-block; }
-    header { background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb; padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; }
-    .logo-icon { width: 36px; height: 36px; background: #0d631b; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-    main { max-width: 680px; margin: 48px auto; width: 100%; padding: 0 24px 80px; flex: 1; }
-    .card { background: #fff; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 40px; margin-bottom: 20px; }
+    header { background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .logo-icon { width: 36px; height: 36px; background: #0d631b; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    main { max-width: 680px; margin: 48px auto; width: 100%; padding: 0 16px 80px; flex: 1; }
+    .card { background: #fff; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 40px; margin-bottom: 20px; overflow-wrap: break-word; word-break: break-word; }
     h1 { font-size: 26px; font-weight: 800; color: #111827; margin-bottom: 8px; }
-    p { font-size: 14px; color: #4b5563; line-height: 1.75; margin-bottom: 12px; }
+    p { font-size: 14px; color: #4b5563; line-height: 1.75; margin-bottom: 12px; overflow-wrap: break-word; word-break: break-word; }
     .contact-row { display: flex; align-items: center; gap: 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 18px 20px; margin: 20px 0; }
     .contact-icon { width: 44px; height: 44px; background: #0d631b; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .contact-text { min-width: 0; } /* clave: permite que el texto se achique en vez de desbordar el flex */
     .contact-label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
-    .contact-value { font-size: 15px; font-weight: 700; color: #0d631b; }
+    .contact-value { font-size: 15px; font-weight: 700; color: #0d631b; overflow-wrap: break-word; word-break: break-word; }
     .info-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 20px; margin: 16px 0; }
     .info-box-title { font-size: 14px; font-weight: 700; color: #92400e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .info-box-title .material-symbols-outlined { flex-shrink: 0; }
     .info-box p { color: #92400e; margin: 0; font-size: 13px; }
     .mp-email-img { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; display: flex; align-items: center; gap: 12px; }
-    .mp-email-img .material-symbols-outlined { font-size: 28px; color: #009ee3; font-variation-settings: 'FILL' 1; }
-    .mp-email-img div { font-size: 13px; color: #374151; }
+    .mp-email-img .material-symbols-outlined { font-size: 28px; color: #009ee3; font-variation-settings: 'FILL' 1; flex-shrink: 0; }
+    .mp-email-img div { font-size: 13px; color: #374151; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .mp-email-img strong { display: block; font-size: 12px; color: #6b7280; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
     h2 { font-size: 16px; font-weight: 700; color: #111827; margin: 24px 0 12px; }
     ul { padding-left: 18px; }
-    li { font-size: 13px; color: #4b5563; line-height: 1.75; margin-bottom: 4px; }
-    footer { background: #fff; border-top: 1px solid #e5e7eb; padding: 24px; text-align: center; }
+    li { font-size: 13px; color: #4b5563; line-height: 1.75; margin-bottom: 4px; overflow-wrap: break-word; word-break: break-word; }
+    footer { background: #fff; border-top: 1px solid #e5e7eb; padding: 24px 16px; text-align: center; }
     footer p { font-size: 12px; color: #9ca3af; }
-    a { color: #0d631b; }
+    a { color: #0d631b; word-break: break-word; }
+
+    @media (max-width: 640px) {
+      .card { padding: 24px 20px; border-radius: 16px; }
+      h1 { font-size: 21px; }
+      .contact-row { padding: 14px 16px; gap: 10px; }
+      .contact-value { font-size: 13px; }
+      .mp-email-img { flex-direction: column; align-items: flex-start; }
+    }
   </style>
 </head>
 <body>
@@ -58,7 +68,7 @@
         <div class="contact-icon">
           <span class="material-symbols-outlined" style="color:#fff;font-size:22px;font-variation-settings:'FILL' 1;">mail</span>
         </div>
-        <div>
+        <div class="contact-text">
           <div class="contact-label">Correo de soporte</div>
           <div class="contact-value">actasmexicanasdevolucion@gmail.com</div>
         </div>
